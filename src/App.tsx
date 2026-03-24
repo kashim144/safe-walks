@@ -22,7 +22,14 @@ import {
   LogOut,
   User,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Share2,
+  Copy,
+  Twitter,
+  Facebook,
+  Plus,
+  Minus,
+  Locate
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet';
@@ -47,6 +54,36 @@ L.Marker.prototype.options.icon = DefaultIcon;
 const socket = io();
 
 // --- Components ---
+
+const MapControls = ({ onRecenter }: { onRecenter: () => void }) => {
+  const map = useMap();
+  
+  return (
+    <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-2">
+      <button 
+        onClick={() => map.zoomIn()}
+        className="w-10 h-10 bg-card-bg/90 backdrop-blur border border-primary/20 rounded-xl flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all shadow-lg"
+        title="Zoom In"
+      >
+        <Plus className="w-5 h-5" />
+      </button>
+      <button 
+        onClick={() => map.zoomOut()}
+        className="w-10 h-10 bg-card-bg/90 backdrop-blur border border-primary/20 rounded-xl flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all shadow-lg"
+        title="Zoom Out"
+      >
+        <Minus className="w-5 h-5" />
+      </button>
+      <button 
+        onClick={onRecenter}
+        className="w-10 h-10 bg-card-bg/90 backdrop-blur border border-primary/20 rounded-xl flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all shadow-lg"
+        title="Recenter on Me"
+      >
+        <Locate className="w-5 h-5" />
+      </button>
+    </div>
+  );
+};
 
 const ChangeView = ({ center, zoom }: { center: [number, number], zoom?: number }) => {
   const map = useMap();
@@ -753,6 +790,24 @@ const DashboardPage = ({ user }: { user: any }) => {
     window.open(whatsappUrl, '_blank');
   };
 
+  const shareRoute = (startName: string, endName: string, score: string) => {
+    const text = `I just found a safe route from ${startName} to ${endName} with a ${score}% safety score using SafeWalk! 🛡️🚶‍♂️`;
+    const url = window.location.origin;
+    
+    return {
+      copy: () => {
+        navigator.clipboard.writeText(`${text} Check it out: ${url}`);
+        alert("Link copied to clipboard!");
+      },
+      twitter: () => {
+        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+      },
+      facebook: () => {
+        window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}`, '_blank');
+      }
+    };
+  };
+
   return (
     <div className="container mx-auto px-6 py-10 max-w-[1200px]">
       <div className="grid md:grid-cols-3 gap-8">
@@ -821,6 +876,29 @@ const DashboardPage = ({ user }: { user: any }) => {
                     <div className="text-[10px] text-text-secondary uppercase">SAFE</div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button 
+                    onClick={() => shareRoute(startAddr, endAddr, routeInfo.safetyScore).copy()}
+                    className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 p-2.5 rounded-[12px] text-[10px] font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Link
+                  </button>
+                  <button 
+                    onClick={() => shareRoute(startAddr, endAddr, routeInfo.safetyScore).twitter()}
+                    className="bg-blue-400/10 hover:bg-blue-400/20 border border-blue-400/20 p-2.5 rounded-[12px] text-blue-400 transition-all"
+                    title="Share on Twitter"
+                  >
+                    <Twitter className="w-3.5 h-3.5" />
+                  </button>
+                  <button 
+                    onClick={() => shareRoute(startAddr, endAddr, routeInfo.safetyScore).facebook()}
+                    className="bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/20 p-2.5 rounded-[12px] text-blue-600 transition-all"
+                    title="Share on Facebook"
+                  >
+                    <Facebook className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </motion.div>
             )}
           </div>
@@ -883,7 +961,19 @@ const DashboardPage = ({ user }: { user: any }) => {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div className="text-[10px] font-bold text-primary uppercase">{h.time}</div>
-                      <div className="text-[10px] font-bold text-green-500">{h.safetyScore}% SAFE</div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            shareRoute(h.startAddr, h.endAddr, h.safetyScore).copy();
+                          }}
+                          className="p-1 hover:text-primary transition-colors"
+                          title="Copy Share Link"
+                        >
+                          <Share2 className="w-3 h-3" />
+                        </button>
+                        <div className="text-[10px] font-bold text-green-500">{h.safetyScore}% SAFE</div>
+                      </div>
                     </div>
                     <div className="text-xs font-medium truncate mb-1 flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-primary" /> {h.startAddr}
@@ -901,8 +991,14 @@ const DashboardPage = ({ user }: { user: any }) => {
         <div className="md:col-span-2">
           <div className="h-[600px] rounded-[24px] overflow-hidden border border-primary/10 shadow-2xl relative">
             {mapCenter ? (
-              <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
+              <MapContainer 
+                center={mapCenter} 
+                zoom={13} 
+                style={{ height: '100%', width: '100%' }}
+                zoomControl={false}
+              >
                 <ChangeView center={mapCenter} />
+                <MapControls onRecenter={() => location && setMapCenter(location)} />
                 <LayersControl position="topright">
                   <LayersControl.BaseLayer checked name="Google Maps Style">
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -1036,8 +1132,14 @@ const AdminPage = () => {
 
         <div className="md:col-span-2">
           <div className="h-[600px] rounded-[24px] overflow-hidden border border-primary/10 shadow-2xl relative">
-            <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }}>
+            <MapContainer 
+              center={mapCenter} 
+              zoom={12} 
+              style={{ height: '100%', width: '100%' }}
+              zoomControl={false}
+            >
               <ChangeView center={mapCenter} zoom={15} />
+              <MapControls onRecenter={() => setMapCenter([19.0760, 72.8777])} />
               <LayersControl position="topright">
                 <LayersControl.BaseLayer checked name="Google Streets">
                   <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
