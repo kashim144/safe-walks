@@ -23,8 +23,8 @@ const ALERTS_FILE = path.join(process.cwd(), "data", "alerts.json");
 const ROUTES_FILE = path.join(process.cwd(), "data", "routes.json");
 
 // Helper to read/write JSON
-const readData = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
-const writeData = (file: string, data: any) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+const readData = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+const writeData = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
 // --- API Endpoints ---
 
@@ -42,7 +42,7 @@ app.post("/api/register", (req, res) => {
 app.post("/api/login", (req, res) => {
   const { email, phone } = req.body;
   const users = readData(USERS_FILE);
-  const user = users.find((u: any) => u.email === email && u.phone === phone);
+  const user = users.find((u) => u.email === email && u.phone === phone);
   if (user) {
     res.json({ success: true, userId: user.id, user });
   } else {
@@ -50,9 +50,37 @@ app.post("/api/login", (req, res) => {
   }
 });
 
+// Update User Profile
+app.post("/api/user/update", (req, res) => {
+  const { id, name, phone, emergency, photoURL } = req.body;
+  const users = readData(USERS_FILE);
+  const userIndex = users.findIndex((u) => u.id === id);
+  if (userIndex > -1) {
+    users[userIndex] = { ...users[userIndex], name, phone, emergency, photoURL };
+    writeData(USERS_FILE, users);
+    res.json({ success: true, user: users[userIndex] });
+  } else {
+    res.status(404).json({ success: false, message: "User not found" });
+  }
+});
+
+// Update User Settings
+app.post("/api/user/settings", (req, res) => {
+  const { id, settings } = req.body;
+  const users = readData(USERS_FILE);
+  const userIndex = users.findIndex((u) => u.id === id);
+  if (userIndex > -1) {
+    users[userIndex] = { ...users[userIndex], settings };
+    writeData(USERS_FILE, users);
+    res.json({ success: true, user: users[userIndex] });
+  } else {
+    res.status(404).json({ success: false, message: "User not found" });
+  }
+});
+
 // SOS Alert
 app.post("/api/sos", (req, res) => {
-  const { userId, lat, lng, name, phone, email } = req.body;
+  const { userId, lat, lng, name, phone, email, photoURL } = req.body;
   const alerts = readData(ALERTS_FILE);
   const newAlert = {
     id: "a" + Date.now(),
@@ -60,6 +88,7 @@ app.post("/api/sos", (req, res) => {
     name,
     phone,
     email,
+    photoURL,
     lat,
     lng,
     time: new Date().toLocaleTimeString(),
@@ -85,7 +114,7 @@ app.get("/api/alerts", (req, res) => {
 app.post("/api/alerts/resolve", (req, res) => {
   const { id } = req.body;
   const alerts = readData(ALERTS_FILE);
-  const alertIndex = alerts.findIndex((a: any) => a.id === id);
+  const alertIndex = alerts.findIndex((a) => a.id === id);
   if (alertIndex > -1) {
     alerts[alertIndex].status = "resolved";
     writeData(ALERTS_FILE, alerts);
@@ -120,7 +149,7 @@ app.post("/api/routes", (req, res) => {
 app.get("/api/routes/:userId", (req, res) => {
   const { userId } = req.params;
   const routes = readData(ROUTES_FILE);
-  const userRoutes = routes.filter((r: any) => r.userId === userId);
+  const userRoutes = routes.filter((r) => r.userId === userId);
   res.json(userRoutes);
 });
 

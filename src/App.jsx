@@ -29,13 +29,22 @@ import {
   Facebook,
   Plus,
   Minus,
-  Locate
+  Locate,
+  Settings,
+  Eye,
+  EyeOff,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import { GoogleGenAI } from "@google/genai";
+import { storage } from './firebase';
+import api from './lib/api';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Camera, Upload } from 'lucide-react';
 
 // Fix Leaflet icon issue
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -55,7 +64,7 @@ const socket = io();
 
 // --- Components ---
 
-const MapControls = ({ onRecenter }: { onRecenter: () => void }) => {
+const MapControls = ({ onRecenter }) => {
   const map = useMap();
   
   return (
@@ -85,7 +94,7 @@ const MapControls = ({ onRecenter }: { onRecenter: () => void }) => {
   );
 };
 
-const ChangeView = ({ center, zoom }: { center: [number, number], zoom?: number }) => {
+const ChangeView = ({ center, zoom }) => {
   const map = useMap();
   useEffect(() => {
     map.setView(center, zoom || map.getZoom());
@@ -93,7 +102,7 @@ const ChangeView = ({ center, zoom }: { center: [number, number], zoom?: number 
   return null;
 };
 
-const Navbar = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
+const Navbar = ({ user, onLogout }) => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -115,12 +124,19 @@ const Navbar = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
         <div className="hidden md:flex items-center gap-4">
           {user ? (
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                  <User className="w-4 h-4" />
+              <Link to="/profile" className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors">
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary overflow-hidden">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <User className="w-4 h-4" />
+                  )}
                 </div>
                 <span>{user.name}</span>
-              </div>
+              </Link>
+              <Link to="/settings" className="text-text-secondary hover:text-primary transition-colors" title="Settings">
+                <Settings className="w-5 h-5" />
+              </Link>
               <button 
                 onClick={onLogout}
                 className="text-text-secondary hover:text-red-500 transition-colors flex items-center gap-1 text-sm font-medium"
@@ -158,7 +174,24 @@ const Navbar = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
             <Link to="/admin" className="text-text-secondary hover:text-primary" onClick={() => setIsOpen(false)}>Admin</Link>
             <hr className="border-white/5" />
             {user ? (
-              <button onClick={() => { onLogout(); setIsOpen(false); }} className="text-left py-2 font-medium text-red-500">Logout</button>
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3 px-2 py-2">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary overflow-hidden">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <User className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">{user.name}</div>
+                    <div className="text-[10px] text-text-secondary">{user.email}</div>
+                  </div>
+                </div>
+                <Link to="/profile" className="text-text-secondary hover:text-primary px-2" onClick={() => setIsOpen(false)}>Profile Settings</Link>
+                <Link to="/settings" className="text-text-secondary hover:text-primary px-2" onClick={() => setIsOpen(false)}>App Settings</Link>
+                <button onClick={() => { onLogout(); setIsOpen(false); }} className="text-left px-2 py-2 font-medium text-red-500">Logout</button>
+              </div>
             ) : (
               <>
                 <Link to="/login" className="text-left py-2 font-medium" onClick={() => setIsOpen(false)}>Login</Link>
@@ -229,7 +262,7 @@ const HelplineSection = () => {
   );
 };
 
-const LandingPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
+const LandingPage = ({ onLogin }) => {
   const navigate = useNavigate();
   
   const handleDemo = () => {
@@ -446,20 +479,14 @@ const RegisterPage = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     try {
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const data = await res.json();
-      if (data.success) {
-        navigate('/login');
-      }
+      await api.post('/api/register', formData, 'creating your account');
+      navigate('/login');
     } catch (err) {
-      setError('Registration failed. Please try again.');
+      setError(err.userMessage || 'Registration failed. Please try again.');
     }
   };
 
@@ -532,20 +559,16 @@ const RegisterPage = () => {
   );
 };
 
-const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
+const LoginPage = ({ onLogin }) => {
   const [formData, setFormData] = useState({ email: '', phone: '' });
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const data = await res.json();
+      const data = await api.post('/api/login', formData, 'logging you in');
       if (data.success) {
         localStorage.setItem('userId', data.userId);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -555,7 +578,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
         setError('Invalid email or phone number.');
       }
     } catch (err) {
-      setError('Login failed. Please try again.');
+      setError(err.userMessage || 'Login failed. Please try again.');
     }
   };
 
@@ -623,18 +646,20 @@ const LoginPage = ({ onLogin }: { onLogin: (user: any) => void }) => {
   );
 };
 
-const DashboardPage = ({ user }: { user: any }) => {
-  const [location, setLocation] = useState<[number, number] | null>(null);
-  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
-  const [start, setStart] = useState<[number, number] | null>(null);
-  const [end, setEnd] = useState<[number, number] | null>(null);
+const DashboardPage = ({ user }) => {
+  const [location, setLocation] = useState(null);
+  const [mapCenter, setMapCenter] = useState(null);
+  const [start, setStart] = useState(null);
+  const [end, setEnd] = useState(null);
   const [startAddr, setStartAddr] = useState('');
   const [endAddr, setEndAddr] = useState('');
-  const [route, setRoute] = useState<[number, number][]>([]);
-  const [routeInfo, setRouteInfo] = useState<any>(null);
-  const [routeHistory, setRouteHistory] = useState<any[]>([]);
-  const [sosStatus, setSosStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [route, setRoute] = useState([]);
+  const [routeInfo, setRouteInfo] = useState(null);
+  const [routeHistory, setRouteHistory] = useState([]);
+  const [sosStatus, setSosStatus] = useState('idle');
   const [isSearching, setIsSearching] = useState(false);
+  const [safePlaces, setSafePlaces] = useState([]);
+  const [isFindingSafePlaces, setIsFindingSafePlaces] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -644,12 +669,12 @@ const DashboardPage = ({ user }: { user: any }) => {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        const coords = [pos.coords.latitude, pos.coords.longitude];
         setLocation(coords);
         setMapCenter(coords);
       },
       () => {
-        const coords: [number, number] = [19.0760, 72.8777];
+        const coords = [19.0760, 72.8777];
         setLocation(coords);
         setMapCenter(coords);
       }
@@ -659,45 +684,41 @@ const DashboardPage = ({ user }: { user: any }) => {
 
   const fetchRouteHistory = async () => {
     try {
-      const res = await fetch(`/api/routes/${user.id}`);
-      const data = await res.json();
+      const data = await api.get(`/api/routes/${user.id}`, 'fetching your route history');
       setRouteHistory(data);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch route history:", err);
     }
   };
 
-  const saveRouteToHistory = async (info: any, routeCoords: any) => {
+  const saveRouteToHistory = async (info, routeCoords) => {
     try {
-      await fetch('/api/routes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          startAddr,
-          endAddr,
-          distance: info.distance,
-          duration: info.duration,
-          safetyScore: info.safetyScore,
-          route: routeCoords
-        })
-      });
+      await api.post('/api/routes', {
+        userId: user.id,
+        startAddr,
+        endAddr,
+        distance: info.distance,
+        duration: info.duration,
+        safetyScore: info.safetyScore,
+        route: routeCoords
+      }, 'saving your route');
       fetchRouteHistory();
     } catch (err) {
-      console.error(err);
+      console.error("Failed to save route:", err);
     }
   };
 
-  const geocode = async (address: string) => {
+  const geocode = async (address) => {
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
+      if (!res.ok) throw new Error('Geocoding failed');
       const data = await res.json();
       if (data && data[0]) {
-        return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
       }
       return null;
     } catch (err) {
-      console.error(err);
+      console.error("Geocoding error:", err);
       return null;
     }
   };
@@ -719,13 +740,14 @@ const DashboardPage = ({ user }: { user: any }) => {
     setIsSearching(false);
   };
 
-  const calculateRoute = async (s: [number, number], e: [number, number]) => {
+  const calculateRoute = async (s, e) => {
     try {
       const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${s[1]},${s[0]};${e[1]},${e[0]}?overview=full&geometries=geojson&alternatives=true`);
+      if (!res.ok) throw new Error('Route calculation failed');
       const data = await res.json();
       if (data.routes && data.routes.length > 0) {
         // Simulate safety scoring for alternatives
-        const scoredRoutes = data.routes.map((r: any, index: number) => {
+        const scoredRoutes = data.routes.map((r, index) => {
           const dist = r.distance / 1000;
           const dur = r.duration / 60;
           // Base score on distance, but add a random "safety factor" for demonstration
@@ -734,7 +756,7 @@ const DashboardPage = ({ user }: { user: any }) => {
           const safetyScore = (safetyFactor - dist * 0.2).toFixed(1);
           
           return {
-            coords: r.geometry.coordinates.map((c: any) => [c[1], c[0]]),
+            coords: r.geometry.coordinates.map((c) => [c[1], c[0]]),
             distance: dist.toFixed(2),
             duration: Math.round(dur),
             safetyScore,
@@ -743,7 +765,7 @@ const DashboardPage = ({ user }: { user: any }) => {
         });
 
         // Sort by safety score descending
-        scoredRoutes.sort((a: any, b: any) => parseFloat(b.safetyScore) - parseFloat(a.safetyScore));
+        scoredRoutes.sort((a, b) => parseFloat(b.safetyScore) - parseFloat(a.safetyScore));
         
         const bestRoute = scoredRoutes[0];
         setRoute(bestRoute.coords);
@@ -764,23 +786,61 @@ const DashboardPage = ({ user }: { user: any }) => {
     if (!location) return;
     setSosStatus('sending');
     try {
-      await fetch('/api/sos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          name: user.name,
-          phone: user.phone,
-          email: user.email,
-          lat: location[0],
-          lng: location[1]
-        })
-      });
+      await api.post('/api/sos', {
+        userId: user.id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email,
+        photoURL: user.photoURL,
+        lat: location[0],
+        lng: location[1]
+      }, 'sending SOS signal');
       setSosStatus('sent');
       setTimeout(() => setSosStatus('idle'), 5000);
     } catch (err) {
+      console.error("SOS error:", err);
       setSosStatus('idle');
+      alert(err.userMessage || "Failed to send SOS. Please call emergency services directly.");
     }
+  };
+
+  const findSafePlaces = async () => {
+    if (!location) return;
+    setIsFindingSafePlaces(true);
+    setSafePlaces([]);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: "List 5 nearby safe places like police stations, hospitals, and 24/7 open public spaces. Provide their names and Google Maps links.",
+        config: {
+          tools: [{ googleMaps: {} }],
+          toolConfig: {
+            retrievalConfig: {
+              latLng: {
+                latitude: location[0],
+                longitude: location[1]
+              }
+            }
+          }
+        },
+      });
+
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      if (chunks) {
+        const places = chunks
+          .filter((c) => c.maps)
+          .map((c) => ({
+            title: c.maps.title,
+            uri: c.maps.uri
+          }));
+        setSafePlaces(places);
+      }
+    } catch (err) {
+      console.error("AI safe places error:", err);
+      alert("We encountered an issue finding safe places using AI. Please use the map to find nearby locations.");
+    }
+    setIsFindingSafePlaces(false);
   };
 
   const trigger112 = () => {
@@ -790,7 +850,7 @@ const DashboardPage = ({ user }: { user: any }) => {
     window.open(whatsappUrl, '_blank');
   };
 
-  const shareRoute = (startName: string, endName: string, score: string) => {
+  const shareRoute = (startName, endName, score) => {
     const text = `I just found a safe route from ${startName} to ${endName} with a ${score}% safety score using SafeWalk! 🛡️🚶‍♂️`;
     const url = window.location.origin;
     
@@ -920,18 +980,59 @@ const DashboardPage = ({ user }: { user: any }) => {
                 {sosStatus === 'sent' && 'SENT'}
               </button>
             </div>
-            <div className="bg-red-600/10 border border-red-600/20 p-4 rounded-[24px] shadow-xl">
-              <h3 className="text-sm font-bold mb-2 flex items-center gap-2 text-red-500">
-                <PhoneCall className="w-4 h-4" /> 112
+            <div className="bg-primary/10 border border-primary/20 p-4 rounded-[24px] shadow-xl">
+              <h3 className="text-sm font-bold mb-2 flex items-center gap-2 text-primary">
+                <Shield className="w-4 h-4" /> SAFE ZONES
               </h3>
               <button 
-                onClick={trigger112}
-                className="w-full py-3 rounded-[12px] text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-all"
+                onClick={findSafePlaces}
+                disabled={isFindingSafePlaces}
+                className="w-full py-3 rounded-[12px] text-xs font-bold bg-primary hover:bg-primary/90 text-black transition-all"
               >
-                WHATSAPP
+                {isFindingSafePlaces ? 'FINDING...' : 'FIND NEARBY'}
               </button>
             </div>
           </div>
+
+          <div className="bg-red-600/10 border border-red-600/20 p-4 rounded-[24px] shadow-xl">
+            <h3 className="text-sm font-bold mb-2 flex items-center gap-2 text-red-500">
+              <PhoneCall className="w-4 h-4" /> 112 Emergency
+            </h3>
+            <button 
+              onClick={trigger112}
+              className="w-full py-3 rounded-[12px] text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-all"
+            >
+              WHATSAPP EMERGENCY CONTACT
+            </button>
+          </div>
+
+          {safePlaces.length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="bg-card-bg border border-primary/10 p-6 rounded-[24px] shadow-xl"
+            >
+              <h3 className="text-sm font-bold mb-4 flex items-center gap-2">
+                <MapPin className="text-primary w-4 h-4" /> Nearby Safe Places
+              </h3>
+              <div className="space-y-3">
+                {safePlaces.map((place, idx) => (
+                  <a 
+                    key={idx}
+                    href={place.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block p-3 bg-dark-bg border border-white/5 rounded-[16px] hover:border-primary/30 transition-all group"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="text-xs font-bold group-hover:text-primary transition-colors">{place.title}</div>
+                      <ExternalLink className="w-3 h-3 text-text-secondary group-hover:text-primary" />
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           <div className="bg-card-bg border border-primary/10 p-6 rounded-[24px] shadow-xl">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -1043,9 +1144,335 @@ const DashboardPage = ({ user }: { user: any }) => {
   );
 };
 
+const ProfilePage = ({ user, onUpdate }) => {
+  const [name, setName] = useState(user?.name || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [emergency, setEmergency] = useState(user?.emergency || '');
+  const [photoURL, setPhotoURL] = useState(user?.photoURL || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [message, setMessage] = useState('');
+  const fileInputRef = useRef(null);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setMessage('Please upload an image file');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage('Image size should be less than 2MB');
+      return;
+    }
+
+    setIsUploading(true);
+    setMessage('');
+
+    try {
+      const storageRef = ref(storage, `profile_pictures/${user.id}_${Date.now()}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      setPhotoURL(downloadURL);
+      setMessage('Image uploaded successfully! Click save to update profile.');
+    } catch (err) {
+      console.error("Upload error:", err);
+      setMessage('Failed to upload image');
+    }
+    setIsUploading(false);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!name || !phone || !emergency) {
+      setMessage('All fields are required');
+      return;
+    }
+    
+    // Basic phone validation
+    const phoneRegex = /^\+?[\d\s-]{10,}$/;
+    if (!phoneRegex.test(phone)) {
+      setMessage('Invalid phone number format');
+      return;
+    }
+    if (!phoneRegex.test(emergency)) {
+      setMessage('Invalid emergency contact format');
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage('');
+    try {
+      const data = await api.post('/api/user/update', { id: user.id, name, phone, emergency, photoURL }, 'updating your profile');
+      if (data.success) {
+        localStorage.setItem('user', JSON.stringify(data.user));
+        onUpdate(data.user);
+        setMessage('Profile updated successfully!');
+      } else {
+        setMessage(data.message || 'Failed to update profile');
+      }
+    } catch (err) {
+      setMessage(err.userMessage || 'An error occurred while updating your profile.');
+    }
+    setIsSaving(false);
+  };
+
+  if (!user) return <div className="py-20 text-center">Please login to view profile</div>;
+
+  return (
+    <div className="container mx-auto px-6 py-20 max-w-[600px]">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-card-bg border border-white/10 p-8 rounded-[32px] shadow-2xl"
+      >
+        <div className="flex items-center gap-4 mb-8">
+          <div className="relative group">
+            <div className="w-20 h-20 bg-primary/20 rounded-2xl flex items-center justify-center text-primary overflow-hidden border-2 border-primary/20 group-hover:border-primary transition-all">
+              {photoURL ? (
+                <img src={photoURL} alt={name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <User className="w-10 h-10" />
+              )}
+              
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                disabled={isUploading}
+              >
+                {isUploading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Camera className="w-6 h-6 text-white" />
+                )}
+              </button>
+            </div>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImageUpload} 
+              className="hidden" 
+              accept="image/*"
+            />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold">Edit Profile</h2>
+            <p className="text-text-secondary text-sm">Keep your safety information up to date.</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSave} className="space-y-6">
+          <div className="flex justify-center mb-4">
+            <button 
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 transition-colors"
+            >
+              <Upload className="w-4 h-4" /> Change Profile Picture
+            </button>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-text-secondary uppercase mb-2 block">Full Name</label>
+            <input 
+              type="text"
+              className="w-full bg-dark-bg border border-white/10 rounded-[16px] p-4 text-sm focus:border-primary outline-none transition-all"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Your full name"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-text-secondary uppercase mb-2 block">Phone Number</label>
+            <input 
+              type="text"
+              className="w-full bg-dark-bg border border-white/10 rounded-[16px] p-4 text-sm focus:border-primary outline-none transition-all"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+91 0000000000"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-text-secondary uppercase mb-2 block">Emergency Contact (WhatsApp)</label>
+            <input 
+              type="text"
+              className="w-full bg-dark-bg border border-white/10 rounded-[16px] p-4 text-sm focus:border-primary outline-none transition-all"
+              value={emergency}
+              onChange={e => setEmergency(e.target.value)}
+              placeholder="+91 1111111111"
+            />
+            <p className="text-[10px] text-text-secondary mt-2">This number will be used for SOS alerts.</p>
+          </div>
+
+          {message && (
+            <div className={`p-4 rounded-[12px] text-sm font-medium ${message.includes('success') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+              {message}
+            </div>
+          )}
+
+          <button 
+            type="submit"
+            disabled={isSaving}
+            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-white py-4 rounded-[16px] font-bold transition-all shadow-xl shadow-primary/20"
+          >
+            {isSaving ? 'Saving Changes...' : 'Save Profile'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+const SettingsPage = ({ user, onUpdate }) => {
+  const [settings, setSettings] = useState(user?.settings || {
+    shareLocation: true,
+    publicProfile: false,
+    notifications: true,
+    emergencyAlerts: true
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleToggle = (key) => {
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setMessage('');
+    try {
+      const data = await api.post('/api/user/settings', { id: user.id, settings }, 'updating your settings');
+      if (data.success) {
+        localStorage.setItem('user', JSON.stringify(data.user));
+        onUpdate(data.user);
+        setMessage('Settings updated successfully!');
+      } else {
+        setMessage('Failed to update settings');
+      }
+    } catch (err) {
+      setMessage(err.userMessage || 'An error occurred while updating your settings.');
+    }
+    setIsSaving(false);
+  };
+
+  if (!user) return <div className="py-20 text-center">Please login to view settings</div>;
+
+  return (
+    <div className="container mx-auto px-6 py-20 max-w-[600px]">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-card-bg border border-white/10 p-8 rounded-[32px] shadow-2xl"
+      >
+        <div className="flex items-center gap-4 mb-8">
+          <div className="w-16 h-16 bg-primary/20 rounded-2xl flex items-center justify-center text-primary">
+            <Settings className="w-8 h-8" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold">Account Settings</h2>
+            <p className="text-text-secondary text-sm">Manage your privacy and account preferences.</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-primary uppercase tracking-wider">Privacy Preferences</h3>
+            
+            <div className="flex items-center justify-between p-4 bg-dark-bg border border-white/5 rounded-[16px]">
+              <div className="flex items-center gap-3">
+                <MapPin className="w-5 h-5 text-text-secondary" />
+                <div>
+                  <div className="text-sm font-bold">Share Location</div>
+                  <div className="text-[10px] text-text-secondary">Automatically share location with emergency contacts during SOS.</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => handleToggle('shareLocation')}
+                className={`w-12 h-6 rounded-full transition-all relative ${settings.shareLocation ? 'bg-primary' : 'bg-white/10'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.shareLocation ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-dark-bg border border-white/5 rounded-[16px]">
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-text-secondary" />
+                <div>
+                  <div className="text-sm font-bold">Public Profile</div>
+                  <div className="text-[10px] text-text-secondary">Allow other users to see your safety contributions.</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => handleToggle('publicProfile')}
+                className={`w-12 h-6 rounded-full transition-all relative ${settings.publicProfile ? 'bg-primary' : 'bg-white/10'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.publicProfile ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-primary uppercase tracking-wider">Notifications</h3>
+            
+            <div className="flex items-center justify-between p-4 bg-dark-bg border border-white/5 rounded-[16px]">
+              <div className="flex items-center gap-3">
+                <Bell className="w-5 h-5 text-text-secondary" />
+                <div>
+                  <div className="text-sm font-bold">Push Notifications</div>
+                  <div className="text-[10px] text-text-secondary">Get alerts about nearby safety updates.</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => handleToggle('notifications')}
+                className={`w-12 h-6 rounded-full transition-all relative ${settings.notifications ? 'bg-primary' : 'bg-white/10'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.notifications ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-dark-bg border border-white/5 rounded-[16px]">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-text-secondary" />
+                <div>
+                  <div className="text-sm font-bold">Emergency Alerts</div>
+                  <div className="text-[10px] text-text-secondary">Receive critical safety alerts in your area.</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => handleToggle('emergencyAlerts')}
+                className={`w-12 h-6 rounded-full transition-all relative ${settings.emergencyAlerts ? 'bg-primary' : 'bg-white/10'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.emergencyAlerts ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+          </div>
+
+          {message && (
+            <div className={`p-4 rounded-[12px] text-sm font-medium ${message.includes('success') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+              {message}
+            </div>
+          )}
+
+          <button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-white py-4 rounded-[16px] font-bold transition-all shadow-xl shadow-primary/20"
+          >
+            {isSaving ? 'Saving Settings...' : 'Save Settings'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const AdminPage = () => {
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([19.0760, 72.8777]);
+  const [alerts, setAlerts] = useState([]);
+  const [mapCenter, setMapCenter] = useState([19.0760, 72.8777]);
+  const [historyFilter, setHistoryFilter] = useState('all');
 
   useEffect(() => {
     fetchAlerts();
@@ -1057,18 +1484,21 @@ const AdminPage = () => {
   }, []);
 
   const fetchAlerts = async () => {
-    const res = await fetch('/api/alerts');
-    const data = await res.json();
-    setAlerts(data);
+    try {
+      const data = await api.get('/api/alerts', 'fetching SOS alerts');
+      setAlerts(data);
+    } catch (err) {
+      console.error("Failed to fetch alerts:", err);
+    }
   };
 
-  const resolveAlert = async (id: string) => {
-    await fetch('/api/alerts/resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    });
-    fetchAlerts();
+  const resolveAlert = async (id) => {
+    try {
+      await api.post('/api/alerts/resolve', { id }, 'resolving the alert');
+      fetchAlerts();
+    } catch (err) {
+      console.error("Failed to resolve alert:", err);
+    }
   };
 
   return (
@@ -1179,6 +1609,112 @@ const AdminPage = () => {
           </div>
         </div>
       </div>
+
+      {/* SOS History Section */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mt-12 bg-card-bg border border-white/10 rounded-[32px] overflow-hidden shadow-2xl"
+      >
+        <div className="p-8 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-bold flex items-center gap-3">
+              <Activity className="text-primary w-6 h-6" /> SOS Alert History
+            </h3>
+            <p className="text-text-secondary text-sm mt-1">Comprehensive log of all emergency signals received.</p>
+          </div>
+          
+          <div className="flex bg-dark-bg p-1 rounded-[16px] border border-white/5">
+            {(['all', 'active', 'resolved']).map((f) => (
+              <button
+                key={f}
+                onClick={() => setHistoryFilter(f)}
+                className={`px-6 py-2 rounded-[12px] text-xs font-bold transition-all capitalize ${historyFilter === f ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-text-secondary hover:text-text-primary'}`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/5 text-[10px] uppercase tracking-widest font-bold text-text-secondary">
+                <th className="px-8 py-4">Timestamp</th>
+                <th className="px-8 py-4">User Details</th>
+                <th className="px-8 py-4">Location</th>
+                <th className="px-8 py-4">Status</th>
+                <th className="px-8 py-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {alerts
+                .filter(a => historyFilter === 'all' || a.status === historyFilter)
+                .map(alert => (
+                  <tr key={alert.id} className="hover:bg-white/[0.02] transition-colors group">
+                    <td className="px-8 py-6">
+                      <div className="text-sm font-medium">{alert.time}</div>
+                      <div className="text-[10px] text-text-secondary">{new Date(alert.timestamp).toLocaleDateString()}</div>
+                    </td>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold overflow-hidden">
+                          {alert.photoURL ? (
+                            <img src={alert.photoURL} alt={alert.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            alert.name.charAt(0)
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold">{alert.name}</div>
+                          <div className="text-[10px] text-text-secondary flex items-center gap-2">
+                            <PhoneCall className="w-3 h-3" /> {alert.phone}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-6">
+                      <button 
+                        onClick={() => {
+                          setMapCenter([alert.lat, alert.lng]);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="text-[10px] text-text-secondary hover:text-primary flex items-center gap-2 transition-colors"
+                      >
+                        <MapPin className="w-3 h-3" /> {alert.lat.toFixed(4)}, {alert.lng.toFixed(4)}
+                      </button>
+                    </td>
+                    <td className="px-8 py-6">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${alert.status === 'active' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20'}`}>
+                        {alert.status}
+                      </span>
+                    </td>
+                    <td className="px-8 py-6 text-right">
+                      {alert.status === 'active' ? (
+                        <button 
+                          onClick={() => resolveAlert(alert.id)}
+                          className="bg-green-500 hover:bg-green-600 text-white text-[10px] font-bold px-4 py-2 rounded-[10px] transition-all"
+                        >
+                          Resolve
+                        </button>
+                      ) : (
+                        <div className="text-green-500 flex items-center justify-end gap-1 text-[10px] font-bold">
+                          <CheckCircle className="w-4 h-4" /> Resolved
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          {alerts.filter(a => historyFilter === 'all' || a.status === historyFilter).length === 0 && (
+            <div className="py-20 text-center text-text-secondary text-sm">
+              No {historyFilter !== 'all' ? historyFilter : ''} alerts found in history.
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 };
@@ -1186,7 +1722,7 @@ const AdminPage = () => {
 // --- Main App ---
 
 export default function App() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -1208,6 +1744,8 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/login" element={<LoginPage onLogin={setUser} />} />
           <Route path="/dashboard" element={<DashboardPage user={user} />} />
+          <Route path="/profile" element={<ProfilePage user={user} onUpdate={setUser} />} />
+          <Route path="/settings" element={<SettingsPage user={user} onUpdate={setUser} />} />
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
 

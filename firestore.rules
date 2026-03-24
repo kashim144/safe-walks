@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - The unique ID of the user.
+    //   - name: string (required) - The full name of the user.
+    //   - email: string (required, email) - The email address of the user.
+    //   - phone: string (optional) - The phone number of the user.
+    //   - emergency: string (optional) - The emergency contact number.
+    //   - photoURL: string (optional) - The URL of the user's profile picture.
+    //   - role: string (required, enum: ['user', 'admin']) - The role of the user.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role']) &&
+             data.uid is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && data.email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$') &&
+             data.role in ['user', 'admin'] &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2048)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() < 20)) &&
+             (!('emergency' in data) || (data.emergency is string && data.emergency.size() < 20));
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || (isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role;
+    }
+  }
+}
