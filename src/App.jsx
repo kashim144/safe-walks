@@ -45,6 +45,7 @@ import { storage } from './firebase';
 import api from './lib/api';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Camera, Upload } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // Fix Leaflet icon issue
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -1755,6 +1756,8 @@ export default function App() {
             &copy; {new Date().getFullYear()} SafeWalk Technologies. All rights reserved.
           </div>
         </footer>
+        
+        <SpeedInsights />
       </div>
     </Router>
   );
