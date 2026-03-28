@@ -619,6 +619,7 @@ const RegisterPage = ({ onLogin }) => {
       let userData;
       if (!userDoc.exists()) {
         userData = {
+          id: user.uid,
           uid: user.uid,
           name: user.displayName,
           email: user.email,
@@ -642,6 +643,10 @@ const RegisterPage = ({ onLogin }) => {
       if (onLogin) onLogin(userData);
       navigate('/dashboard');
     } catch (err) {
+      if (err.code === 'auth/cancelled-popup-request') {
+        console.log("Google login popup was cancelled or closed.");
+        return;
+      }
       console.error("Google login error:", err);
       if (err.code === 'auth/unauthorized-domain') {
         setError(`Unauthorized domain. Please add "${window.location.hostname}" to the "Authorized domains" list in your Firebase Console (Authentication > Settings > Authorized domains).`);
@@ -912,6 +917,10 @@ const LoginPage = ({ onLogin }) => {
       onLogin(userData);
       navigate('/dashboard');
     } catch (err) {
+      if (err.code === 'auth/cancelled-popup-request') {
+        console.log("Google login popup was cancelled or closed.");
+        return;
+      }
       console.error("Google login error:", err);
       if (err.code === 'auth/unauthorized-domain') {
         setError(`Unauthorized domain. Please add "${window.location.hostname}" to the "Authorized domains" list in your Firebase Console (Authentication > Settings > Authorized domains).`);
@@ -1034,7 +1043,7 @@ const DashboardPage = ({ user }) => {
   const [activeAlert, setActiveAlert] = useState(null);
 
   useEffect(() => {
-    if (user) {
+    if (user && user.id) {
       const q = query(
         collection(db, 'alerts'),
         where('userId', '==', user.id),
@@ -1055,7 +1064,7 @@ const DashboardPage = ({ user }) => {
   }, [user]);
 
   useEffect(() => {
-    if (user) {
+    if (user && user.id) {
       const q = query(
         collection(db, 'routes'),
         where('userId', '==', user.id),
