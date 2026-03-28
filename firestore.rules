@@ -16,6 +16,33 @@ service cloud.firestore {
     //   - photoURL: string (optional) - The URL of the user's profile picture.
     //   - role: string (required, enum: ['user', 'admin']) - The role of the user.
     //
+    // Collection: alerts
+    // Document ID: {alertId}
+    // Fields:
+    //   - userId: string (required) - The ID of the user who triggered the alert.
+    //   - name: string (required) - The name of the user.
+    //   - phone: string (optional) - The phone number of the user.
+    //   - email: string (optional) - The email of the user.
+    //   - photoURL: string (optional) - The photo URL of the user.
+    //   - lat: number (required) - The latitude of the alert location.
+    //   - lng: number (required) - The longitude of the alert location.
+    //   - time: string (optional) - The time the alert was triggered.
+    //   - status: string (required, enum: ['active', 'resolved']) - The status of the alert.
+    //   - timestamp: number (required) - The timestamp of the alert.
+    //
+    // Collection: routes
+    // Document ID: {routeId}
+    // Fields:
+    //   - userId: string (required) - The ID of the user.
+    //   - startAddr: string (required) - The starting address.
+    //   - endAddr: string (required) - The ending address.
+    //   - distance: string (optional) - The distance of the route.
+    //   - duration: number (optional) - The duration of the route in minutes.
+    //   - safetyScore: string (optional) - The safety score of the route.
+    //   - route: list (optional) - The coordinates of the route.
+    //   - timestamp: number (required) - The timestamp of the route.
+    //   - time: string (optional) - The time the route was saved.
+    //
     // ===============================================================
 
     // ===============================================================
@@ -29,21 +56,85 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isAuthenticated() && 
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+         (request.auth.token.email == "valism619@gmail.com" && request.auth.token.email_verified == true));
+    }
+
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'name', 'email', 'role']) &&
+      let requiredFields = ['uid', 'name', 'email', 'role'];
+      let optionalFields = ['phone', 'emergency', 'photoURL', 'createdAt'];
+      let allFields = requiredFields.concat(optionalFields);
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allFields) &&
              data.uid is string &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && data.email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$') &&
              data.role in ['user', 'admin'] &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2048)) &&
              (!('phone' in data) || (data.phone is string && data.phone.size() < 20)) &&
-             (!('emergency' in data) || (data.emergency is string && data.emergency.size() < 20));
+             (!('emergency' in data) || (data.emergency is string && data.emergency.size() < 20)) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp || data.createdAt is number));
+    }
+
+    function isValidAlert(data) {
+      let requiredFields = ['userId', 'lat', 'lng', 'status', 'timestamp'];
+      let optionalFields = ['name', 'phone', 'email', 'photoURL', 'time', 'resolvedAt'];
+      let allFields = requiredFields.concat(optionalFields);
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allFields) &&
+             data.userId is string &&
+             data.lat is number &&
+             data.lng is number &&
+             data.status in ['active', 'resolved'] &&
+             (data.timestamp is timestamp || data.timestamp is number) &&
+             (!('name' in data) || (data.name is string && data.name.size() < 100)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() < 20)) &&
+             (!('email' in data) || (data.email is string && data.email.size() < 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2048)) &&
+             (!('time' in data) || (data.time is string && data.time.size() < 50)) &&
+             (!('resolvedAt' in data) || (data.resolvedAt is timestamp || data.resolvedAt is number));
+    }
+
+    function isValidRoute(data) {
+      let requiredFields = ['userId', 'startAddr', 'endAddr', 'timestamp', 'route'];
+      let optionalFields = ['distance', 'duration', 'safetyScore', 'time'];
+      let allFields = requiredFields.concat(optionalFields);
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allFields) &&
+             data.userId is string &&
+             data.startAddr is string &&
+             data.endAddr is string &&
+             data.route is string &&
+             (data.timestamp is timestamp || data.timestamp is number) &&
+             (!('distance' in data) || (data.distance is string && data.distance.size() < 50)) &&
+             (!('duration' in data) || (data.duration is string || data.duration is number)) &&
+             (!('safetyScore' in data) || (data.safetyScore is number || data.safetyScore is string)) &&
+             (!('time' in data) || (data.time is string && data.time.size() < 50));
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || (isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role;
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user') || isAdmin();
+      allow update: if (isAuthenticated() && isValidUser(request.resource.data) && ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin()));
+      allow delete: if isAdmin();
+    }
+
+    match /alerts/{alertId} {
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || (resource.data.status == 'active') || (resource.data.userId == 'demo-user');
+      allow create: if (isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidAlert(request.resource.data)) || (request.resource.data.userId == 'demo-user' && isValidAlert(request.resource.data));
+      allow update: if (resource.data.userId == 'demo-user') || (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidAlert(request.resource.data));
+    }
+
+    match /routes/{routeId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || (resource.data.userId == 'demo-user');
+      allow create: if (isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidRoute(request.resource.data)) || (request.resource.data.userId == 'demo-user' && isValidRoute(request.resource.data));
+      allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || (resource.data.userId == 'demo-user');
+    }
+
+    match /test/{docId} {
+      allow read: if true;
     }
   }
 }

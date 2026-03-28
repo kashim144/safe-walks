@@ -14,12 +14,56 @@
         "role": { "type": "string", "enum": ["user", "admin"], "description": "The role of the user." }
       },
       "required": ["uid", "name", "email"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "An SOS alert triggered by a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user who triggered the alert." },
+        "name": { "type": "string", "description": "The name of the user." },
+        "phone": { "type": "string", "description": "The phone number of the user." },
+        "email": { "type": "string", "description": "The email of the user." },
+        "photoURL": { "type": "string", "description": "The photo URL of the user." },
+        "lat": { "type": "number", "description": "The latitude of the alert location." },
+        "lng": { "type": "number", "description": "The longitude of the alert location." },
+        "time": { "type": "string", "description": "The time the alert was triggered." },
+        "status": { "type": "string", "enum": ["active", "resolved"], "description": "The status of the alert." },
+        "timestamp": { "type": "number", "description": "The timestamp of the alert." },
+        "resolvedAt": { "type": "number", "description": "The timestamp when the alert was resolved." }
+      },
+      "required": ["userId", "lat", "lng", "status", "timestamp"]
+    },
+    "Route": {
+      "title": "Route",
+      "description": "A saved route in the user's history.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user." },
+        "startAddr": { "type": "string", "description": "The starting address." },
+        "endAddr": { "type": "string", "description": "The ending address." },
+        "distance": { "type": "string", "description": "The distance of the route." },
+        "duration": { "type": "string", "description": "The duration of the route." },
+        "safetyScore": { "type": "number", "description": "The safety score of the route." },
+        "route": { "type": "string", "description": "The JSON stringified coordinates of the route." },
+        "timestamp": { "type": "number", "description": "The timestamp of the route." },
+        "time": { "type": "string", "description": "The time the route was saved." }
+      },
+      "required": ["userId", "startAddr", "endAddr", "timestamp", "route"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "The user's profile data."
+    },
+    "/alerts/{alertId}": {
+      "schema": "Alert",
+      "description": "SOS alerts triggered by users."
+    },
+    "/routes/{routeId}": {
+      "schema": "Route",
+      "description": "Saved route history."
     }
   }
 }
