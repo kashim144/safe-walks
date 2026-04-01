@@ -1,9 +1,10 @@
 {
-  "projectId": "safe-walk-f2a2c",
-  "appId": "1:1001387639459:web:5862d101327886afc23516",
-  "apiKey": "AIzaSyBI-Yw1tulws8MZ5ReVR7wpRGh8I8eXid0",
-  "authDomain": "safe-walk-f2a2c.firebaseapp.com",
-  "storageBucket": "safe-walk-f2a2c.firebasestorage.app",
-  "messagingSenderId": "1001387639459",
-  "measurementId": "G-BLF22N8WQD"
+  "projectId": "gen-lang-client-0025721818",
+  "appId": "1:536376663674:web:f5a45714fc460cc034e5c3",
+  "apiKey": "AIzaSyDyslRlMOXpI1-oV-M7UhDhm_U1ANKVg38",
+  "authDomain": "gen-lang-client-0025721818.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-03de76d3-fd77-47c8-ac6d-572d12885e74",
+  "storageBucket": "gen-lang-client-0025721818.firebasestorage.app",
+  "messagingSenderId": "536376663674",
+  "measurementId": ""
 }

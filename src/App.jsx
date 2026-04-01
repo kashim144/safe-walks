@@ -39,11 +39,14 @@ import {
   FileText,
   Camera,
   Upload,
-  Copy
+  Copy,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl, FeatureGroup } from 'react-leaflet';
 import L from 'leaflet';
+import { EditControl } from "react-leaflet-draw";
+import "leaflet-draw/dist/leaflet.draw.css";
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { GoogleGenAI } from "@google/genai";
@@ -77,6 +80,16 @@ import { db, auth, storage } from './firebase';
 import api from './lib/api';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
+import polyline from 'polyline';
+import { 
+  VoiceSOS, 
+  FallDetection, 
+  AISafetyAssistant, 
+  AnalyticsDashboard, 
+  useLiveTracking,
+  useLiveLocationReceiver 
+} from './extensions/FrontendExtensions';
+
 // Fix Leaflet icon issue
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -90,6 +103,92 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
+const CustomMarkerIcon = L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+});
+
+const MapTypeControl = ({ mapType, setMapType }) => {
+  const types = [
+    { id: 'roadmap', label: 'Roadmap', icon: <Globe className="w-4 h-4" /> },
+    { id: 'satellite', label: 'Satellite', icon: <Camera className="w-4 h-4" /> },
+    { id: 'terrain', label: 'Terrain', icon: <Activity className="w-4 h-4" /> },
+    { id: 'hybrid', label: 'Hybrid', icon: <LayersControl className="w-4 h-4" /> }
+  ];
+
+  return (
+    <div className="absolute top-6 right-20 z-[1000] flex gap-2 bg-card-bg/80 backdrop-blur-md p-1.5 rounded-2xl border border-glass-border shadow-2xl">
+      {types.map(t => (
+        <button
+          key={t.id}
+          onClick={() => setMapType(t.id)}
+          className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${mapType === t.id ? 'bg-primary text-dark-bg shadow-lg' : 'text-text-secondary hover:text-text-primary hover:bg-secondary-bg/50'}`}
+        >
+          {t.icon}
+          <span className="hidden sm:inline">{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const SearchControl = ({ onSelect }) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const search = async (e) => {
+    e.preventDefault();
+    if (!query) return;
+    setIsSearching(true);
+    try {
+      const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+      const data = await resp.json();
+      setResults(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  return (
+    <div className="absolute top-6 left-20 z-[1000] w-full max-w-[300px]">
+      <form onSubmit={search} className="relative group">
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search places..."
+          className="w-full bg-card-bg/80 backdrop-blur-md border border-glass-border rounded-2xl p-4 pl-12 text-sm text-text-primary focus:border-primary/50 focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-2xl"
+        />
+        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary group-focus-within:text-primary transition-colors" />
+        {isSearching && <div className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
+      </form>
+      {results.length > 0 && (
+        <div className="mt-2 bg-card-bg/90 backdrop-blur-md border border-glass-border rounded-2xl overflow-hidden shadow-2xl max-h-[300px] overflow-y-auto custom-scrollbar">
+          {results.map((r, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                onSelect([parseFloat(r.lat), parseFloat(r.lon)], r.display_name);
+                setResults([]);
+                setQuery('');
+              }}
+              className="w-full text-left p-4 hover:bg-secondary-bg/50 transition-colors border-b border-glass-border/50 last:border-0"
+            >
+              <div className="text-xs font-bold text-text-primary truncate">{r.display_name}</div>
+              <div className="text-[10px] text-text-secondary mt-1 uppercase tracking-widest">{r.type}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- Socket Initialization ---
 const socket = io();
 
@@ -101,6 +200,16 @@ const OperationType = {
   LIST: 'list',
   GET: 'get',
   WRITE: 'write',
+};
+
+const getTimestampMillis = (ts) => {
+  if (!ts) return 0;
+  if (typeof ts === 'number') return ts;
+  if (ts.toMillis) return ts.toMillis();
+  if (ts.seconds) return ts.seconds * 1000;
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === 'string') return new Date(ts).getTime();
+  return 0;
 };
 
 const handleFirestoreError = (error, operationType, path, firebaseUser = null) => {
@@ -134,9 +243,9 @@ const handleFirestoreError = (error, operationType, path, firebaseUser = null) =
   };
   
   if (isOffline) {
-    console.error('Firestore Connection Error: It seems Firestore is not reachable. Please ensure you have created a Firestore database in the Firebase Console (https://console.firebase.google.com/) for project "safe-walk-f2a2c".');
+    console.error('Firestore Connection Error: It seems Firestore is not reachable. Please ensure you have created a Firestore database in the Firebase Console (https://console.firebase.google.com/) for project "gen-lang-client-0025721818".');
   } else if (isPermissionDenied) {
-    console.error('Firestore Permission Error: Your Firestore Security Rules are blocking this request. Please update your rules in the Firebase Console (https://console.firebase.google.com/project/safe-walk-f2a2c/firestore/rules).');
+    console.error('Firestore Permission Error: Your Firestore Security Rules are blocking this request. Please update your rules in the Firebase Console (https://console.firebase.google.com/project/gen-lang-client-0025721818/firestore/rules).');
   }
   
   console.error('Firestore Error: ', JSON.stringify(errInfo));
@@ -201,7 +310,9 @@ const Navbar = ({ user, onLogout }) => {
         <div className="hidden md:flex items-center gap-10 text-[11px] font-bold text-text-secondary uppercase tracking-[0.2em]">
           <Link to="/#features" className="hover:text-primary transition-all duration-250">Features</Link>
           <Link to="/dashboard" className="hover:text-primary transition-all duration-250">Dashboard</Link>
-          <Link to="/admin" className="hover:text-primary transition-all duration-250">Admin</Link>
+          {(user?.role === 'admin' || user?.email === 'valism619@gmail.com' || user?.email === 'shaikking032@gmail.com') && (
+            <Link to="/admin" className="hover:text-primary transition-all duration-250">Admin</Link>
+          )}
           {user && <Link to={`/track/${user.id}`} className="hover:text-primary transition-all duration-250">Live Track</Link>}
         </div>
 
@@ -257,7 +368,9 @@ const Navbar = ({ user, onLogout }) => {
           >
             <Link to="/#features" className="text-text-secondary hover:text-primary" onClick={() => setIsOpen(false)}>Features</Link>
             <Link to="/dashboard" className="text-text-secondary hover:text-primary" onClick={() => setIsOpen(false)}>Dashboard</Link>
-            <Link to="/admin" className="text-text-secondary hover:text-primary" onClick={() => setIsOpen(false)}>Admin</Link>
+            {(user?.role === 'admin' || user?.email === 'valism619@gmail.com' || user?.email === 'shaikking032@gmail.com') && (
+              <Link to="/admin" className="text-text-secondary hover:text-primary" onClick={() => setIsOpen(false)}>Admin</Link>
+            )}
             <hr className="border-glass-border/50" />
             {user ? (
               <div className="flex flex-col gap-4">
@@ -693,16 +806,20 @@ const RegisterPage = ({ onLogin }) => {
       setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
       console.error("Registration error:", err);
-      if (err.code === 'auth/email-already-in-use') {
+      const errorCode = err.code;
+      
+      if (errorCode === 'auth/email-already-in-use') {
         setError('This email is already registered. Please try logging in or use a different email.');
-      } else if (err.code === 'auth/weak-password') {
+      } else if (errorCode === 'auth/weak-password') {
         setError('Password should be at least 6 characters.');
-      } else if (err.code === 'auth/operation-not-allowed') {
+      } else if (errorCode === 'auth/operation-not-allowed') {
         setError('Email/Password login is disabled. Please enable it in the Firebase Console under Authentication > Sign-in method.');
-      } else if (err.message.includes('offline')) {
+      } else if (errorCode === 'auth/invalid-email') {
+        setError('Invalid email address format.');
+      } else if (err.message?.includes('offline')) {
         setError('Firestore is offline. Please ensure you have created a Firestore database in your Firebase project.');
       } else {
-        setError('Registration failed. Please try again.');
+        setError(err.message || 'Registration failed. Please try again.');
       }
     }
   };
@@ -867,14 +984,16 @@ const LoginPage = ({ onLogin }) => {
       }
     } catch (err) {
       console.error("Login error:", err);
-      if (err.code === 'auth/invalid-credential') {
+      const errorCode = err.code;
+      
+      if (errorCode === 'auth/invalid-credential' || errorCode === 'auth/wrong-password' || errorCode === 'auth/user-not-found') {
         setError('Invalid email or password. Please check your credentials and try again.');
-      } else if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email.');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Incorrect password.');
+      } else if (errorCode === 'auth/too-many-requests') {
+        setError('Too many failed login attempts. Please try again later.');
+      } else if (errorCode === 'auth/user-disabled') {
+        setError('This account has been disabled. Please contact support.');
       } else {
-        setError('Login failed. Please try again.');
+        setError(err.message || 'Login failed. Please try again.');
       }
     }
   };
@@ -1041,21 +1160,59 @@ const DashboardPage = ({ user }) => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [activeAlert, setActiveAlert] = useState(null);
+  const [allAlerts, setAllAlerts] = useState([]);
+  const [mapType, setMapType] = useState('roadmap');
+  const [customMarkers, setCustomMarkers] = useState([]);
+  const [drawnItems, setDrawnItems] = useState([]);
+
+  const getTileUrl = () => {
+    switch (mapType) {
+      case 'satellite': return 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+      case 'terrain': return 'https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}';
+      case 'hybrid': return 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+      default: return 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+    }
+  };
+
+  const handlePlaceSelect = (coords, name) => {
+    setMapCenter(coords);
+    const newMarker = {
+      id: Date.now(),
+      position: coords,
+      title: name,
+      description: 'Selected from search',
+      image: `https://picsum.photos/seed/${name}/400/300`
+    };
+    setCustomMarkers(prev => [...prev, newMarker]);
+  };
+
+  const onCreated = (e) => {
+    const { layerType, layer } = e;
+    if (layerType === 'marker') {
+      const { lat, lng } = layer.getLatLng();
+      const newMarker = {
+        id: Date.now(),
+        position: [lat, lng],
+        title: 'New Point',
+        description: 'Added via drawing tool',
+        image: `https://picsum.photos/seed/${Date.now()}/400/300`
+      };
+      setCustomMarkers(prev => [...prev, newMarker]);
+    }
+    setDrawnItems(prev => [...prev, layer]);
+  };
 
   useEffect(() => {
     if (user && user.id) {
       const q = query(
         collection(db, 'alerts'),
-        where('userId', '==', user.id),
-        where('status', '==', 'active'),
-        limit(1)
+        where('userId', '==', user.id)
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        if (!snapshot.empty) {
-          setActiveAlert({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-        } else {
-          setActiveAlert(null);
-        }
+        const alerts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllAlerts(alerts);
+        const active = alerts.find(a => a.status === 'active');
+        setActiveAlert(active || null);
       }, (err) => {
         handleFirestoreError(err, OperationType.GET, 'alerts');
       });
@@ -1067,17 +1224,33 @@ const DashboardPage = ({ user }) => {
     if (user && user.id) {
       const q = query(
         collection(db, 'routes'),
-        where('userId', '==', user.id),
-        orderBy('timestamp', 'desc')
+        where('userId', '==', user.id)
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const routes = snapshot.docs.map(doc => {
           const data = doc.data();
+          let decodedRoute = data.route;
+          try {
+            if (typeof data.route === 'string') {
+              // Try to decode if it's an encoded polyline, otherwise parse as JSON
+              if (data.route.startsWith('[') || data.route.startsWith('{')) {
+                decodedRoute = JSON.parse(data.route);
+              } else {
+                decodedRoute = polyline.decode(data.route);
+              }
+            }
+          } catch (e) {
+            console.error("Error decoding route:", e);
+          }
           return { 
             id: doc.id, 
             ...data, 
-            route: typeof data.route === 'string' ? JSON.parse(data.route) : data.route 
+            route: decodedRoute
           };
+        });
+        // Sort on client side to avoid index requirement
+        routes.sort((a, b) => {
+          return getTimestampMillis(b.timestamp) - getTimestampMillis(a.timestamp);
         });
         setRouteHistory(routes);
       }, (err) => {
@@ -1146,7 +1319,7 @@ const DashboardPage = ({ user }) => {
         distance: String(info.distance || ''),
         duration: String(info.duration || ''),
         safetyScore: Number(info.safetyScore || 0),
-        route: JSON.stringify(routeCoords),
+        route: polyline.encode(routeCoords),
         timestamp: serverTimestamp(),
         time: new Date().toLocaleTimeString()
       });
@@ -1390,6 +1563,20 @@ const DashboardPage = ({ user }) => {
 
   return (
     <div className="container mx-auto px-6 py-10 max-w-[1400px]">
+      {/* Feature 4 & 7: Voice SOS and Fall Detection */}
+      <VoiceSOS onTrigger={triggerSOS} />
+      <FallDetection onTrigger={triggerSOS} />
+
+      {/* Feature 8: Analytics Dashboard */}
+      <div className="mb-10">
+        <AnalyticsDashboard alerts={allAlerts} />
+      </div>
+
+      {/* Feature 6: AI Safety Assistant */}
+      <div className="mb-10">
+        <AISafetyAssistant routes={routeHistory} alerts={allAlerts} />
+      </div>
+
       {/* Fake Call Overlay */}
       <AnimatePresence>
         {showFakeCall && (
@@ -1697,14 +1884,31 @@ const DashboardPage = ({ user }) => {
               >
                 <ChangeView center={mapCenter} />
                 <MapControls onRecenter={() => location && setMapCenter(location)} />
-                <LayersControl position="topright">
-                  <LayersControl.BaseLayer checked name="Dark Mode">
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-                  </LayersControl.BaseLayer>
-                  <LayersControl.BaseLayer name="Satellite">
-                    <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-                  </LayersControl.BaseLayer>
-                </LayersControl>
+                <MapTypeControl mapType={mapType} setMapType={setMapType} />
+                <SearchControl onSelect={handlePlaceSelect} />
+                
+                <TileLayer 
+                  key={mapType}
+                  url={getTileUrl()} 
+                  subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
+                  attribution='&copy; Google Maps'
+                />
+
+                <FeatureGroup>
+                  <EditControl
+                    position="topleft"
+                    onCreated={onCreated}
+                    draw={{
+                      rectangle: true,
+                      polyline: true,
+                      circle: true,
+                      circlemarker: false,
+                      marker: true,
+                      polygon: true,
+                    }}
+                  />
+                </FeatureGroup>
+
                 {location && (
                   <Marker position={location}>
                     <Popup>
@@ -1715,6 +1919,19 @@ const DashboardPage = ({ user }) => {
                     </Popup>
                   </Marker>
                 )}
+
+                {customMarkers.map(m => (
+                  <Marker key={m.id} position={m.position} icon={CustomMarkerIcon}>
+                    <Popup>
+                      <div className="p-2 max-w-[200px]">
+                        {m.image && <img src={m.image} alt={m.title} className="w-full h-24 object-cover rounded-lg mb-2" />}
+                        <div className="text-xs font-bold text-text-primary mb-1">{m.title}</div>
+                        <div className="text-[10px] text-text-secondary leading-relaxed">{m.description}</div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+
                 {start && <Marker position={start}><Popup>Start</Popup></Marker>}
                 {end && <Marker position={end}><Popup>Destination</Popup></Marker>}
                 {route.length > 0 && <Polyline positions={route} color="#EF4444" weight={6} opacity={0.8} />}
@@ -2149,18 +2366,28 @@ const TrackingPage = ({ user }) => {
   const [mapCenter, setMapCenter] = useState([19.0760, 72.8777]);
   const [isResolving, setIsResolving] = useState(false);
 
+  // Feature 2: Real-time location receiver
+  const liveLocation = useLiveLocationReceiver(userId);
+
+  useEffect(() => {
+    if (liveLocation) {
+      setMapCenter(liveLocation);
+    }
+  }, [liveLocation]);
+
   useEffect(() => {
     const q = query(
       collection(db, 'alerts'),
       where('userId', '==', userId),
-      where('status', '==', 'active'),
-      orderBy('timestamp', 'desc'),
-      limit(1)
+      where('status', '==', 'active')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
-        const data = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+        // Sort on client side to get the latest if multiple active alerts exist
+        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        docs.sort((a, b) => getTimestampMillis(b.timestamp) - getTimestampMillis(a.timestamp));
+        const data = docs[0];
         setAlert(data);
         setMapCenter([data.lat, data.lng]);
       } else {
@@ -2234,9 +2461,10 @@ const TrackingPage = ({ user }) => {
           >
             <ChangeView center={mapCenter} zoom={15} />
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <Marker position={[alert.lat, alert.lng]}>
+            <Marker position={liveLocation || [alert.lat, alert.lng]}>
               <Popup>
                 <div className="text-xs font-bold">{alert.name} is here</div>
+                {liveLocation && <div className="text-[10px] text-success font-bold uppercase mt-1">Live Tracking Active</div>}
               </Popup>
             </Marker>
           </MapContainer>
@@ -2292,18 +2520,34 @@ const AdminPage = () => {
   const [users, setUsers] = useState([]);
   const [mapCenter, setMapCenter] = useState([19.0760, 72.8777]);
   const [historyFilter, setHistoryFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState('alerts');
+  const [activeTab, setActiveTab] = useState('monitoring');
   const [editingUser, setEditingUser] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [liveLocations, setLiveLocations] = useState({});
 
   useEffect(() => {
-    const qAlerts = query(collection(db, 'alerts'), orderBy('timestamp', 'desc'));
+    const socket = io();
+    socket.on('location_update', (data) => {
+      setLiveLocations(prev => ({
+        ...prev,
+        [data.userId]: [data.lat, data.lng]
+      }));
+    });
+    return () => socket.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const qAlerts = query(collection(db, 'alerts'));
     const unsubscribeAlerts = onSnapshot(qAlerts, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort client side
+      data.sort((a, b) => getTimestampMillis(b.timestamp) - getTimestampMillis(a.timestamp));
       setAlerts(data);
-      if (data.length > 0 && data[0].status === 'active') {
-        setMapCenter([data[0].lat, data[0].lng]);
+      
+      const activeAlerts = data.filter(a => a.status === 'active' || a.status === 'dispatched');
+      if (activeAlerts.length > 0) {
+        setMapCenter([activeAlerts[0].lat, activeAlerts[0].lng]);
       }
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'alerts');
@@ -2328,6 +2572,18 @@ const AdminPage = () => {
       await updateDoc(doc(db, 'alerts', id), {
         status: 'resolved',
         resolvedAt: serverTimestamp()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `alerts/${id}`);
+    }
+  };
+
+  const dispatchHelp = async (id) => {
+    try {
+      await updateDoc(doc(db, 'alerts', id), {
+        status: 'dispatched',
+        dispatchedAt: serverTimestamp(),
+        responderId: 'R-' + Math.floor(Math.random() * 1000)
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `alerts/${id}`);
@@ -2388,6 +2644,11 @@ const AdminPage = () => {
 
   return (
     <div className="container mx-auto px-6 py-10 max-w-[1200px]">
+      {/* Feature 8: Analytics Dashboard for Admin */}
+      <div className="mb-12">
+        <AnalyticsDashboard alerts={alerts} />
+      </div>
+
       {/* Admin Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
         <motion.div 
@@ -2453,10 +2714,16 @@ const AdminPage = () => {
       {/* Tabs */}
       <div className="flex gap-4 mb-8">
         <button 
+          onClick={() => setActiveTab('monitoring')}
+          className={`px-8 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'monitoring' ? 'bg-primary text-dark-bg shadow-lg shadow-primary/20' : 'bg-secondary-bg/30 text-text-secondary hover:text-text-primary'}`}
+        >
+          Live Monitoring
+        </button>
+        <button 
           onClick={() => setActiveTab('alerts')}
           className={`px-8 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === 'alerts' ? 'bg-primary text-dark-bg shadow-lg shadow-primary/20' : 'bg-secondary-bg/30 text-text-secondary hover:text-text-primary'}`}
         >
-          SOS Alerts
+          SOS History
         </button>
         <button 
           onClick={() => setActiveTab('users')}
@@ -2466,7 +2733,110 @@ const AdminPage = () => {
         </button>
       </div>
 
-      {activeTab === 'alerts' ? (
+      {activeTab === 'monitoring' && (
+        <div className="grid md:grid-cols-3 gap-8 mb-12">
+          <div className="md:col-span-2">
+            <div className="h-[600px] rounded-[32px] overflow-hidden border border-glass-border shadow-2xl relative">
+              <MapContainer 
+                center={mapCenter} 
+                zoom={12} 
+                style={{ height: '100%', width: '100%' }}
+                zoomControl={false}
+              >
+                <ChangeView center={mapCenter} zoom={15} />
+                <MapControls onRecenter={() => setMapCenter([19.0760, 72.8777])} />
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                {alerts.filter(a => a.status !== 'resolved').map(alert => (
+                  <Marker 
+                    key={alert.id} 
+                    position={liveLocations[alert.userId] || [alert.lat, alert.lng]}
+                  >
+                    <Popup>
+                      <div className="p-2 min-w-[150px]">
+                        <div className="font-black text-sm mb-1">{alert.name}</div>
+                        <div className={`text-[10px] font-bold uppercase mb-2 ${alert.status === 'active' ? 'text-error' : 'text-warning'}`}>
+                          Status: {alert.status}
+                        </div>
+                        {liveLocations[alert.userId] && <div className="text-[9px] text-success font-bold uppercase mb-2">Live Tracking Active</div>}
+                        <div className="text-[10px] text-text-secondary mb-3">
+                          Time: {alert.time}
+                        </div>
+                        {alert.status === 'active' && (
+                          <button 
+                            onClick={() => dispatchHelp(alert.id)}
+                            className="w-full bg-primary text-dark-bg py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest"
+                          >
+                            Dispatch Help
+                          </button>
+                        )}
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MapContainer>
+              <div className="absolute top-6 left-6 z-[1000] flex flex-col gap-3">
+                <div className="bg-dark-bg/80 backdrop-blur-md px-4 py-2 rounded-xl border border-glass-border text-[10px] font-bold text-text-primary flex items-center gap-2">
+                  <div className="w-2 h-2 bg-error rounded-full animate-pulse" /> {alerts.filter(a => a.status === 'active').length} ACTIVE ALERTS
+                </div>
+                <div className="bg-dark-bg/80 backdrop-blur-md px-4 py-2 rounded-xl border border-glass-border text-[10px] font-bold text-text-primary flex items-center gap-2">
+                  <div className="w-2 h-2 bg-warning rounded-full" /> {alerts.filter(a => a.status === 'dispatched').length} DISPATCHED
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="md:col-span-1 space-y-6">
+            <div className="glass-card p-6 h-[600px] flex flex-col">
+              <h3 className="text-lg font-black mb-6 flex items-center gap-3">
+                <Activity className="text-primary w-5 h-5" /> Response Queue
+              </h3>
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                {alerts.filter(a => a.status !== 'resolved').length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center opacity-30 text-center">
+                    <Shield className="w-12 h-12 mb-4" />
+                    <p className="text-xs font-bold uppercase tracking-widest">No active emergencies</p>
+                  </div>
+                ) : (
+                  alerts.filter(a => a.status !== 'resolved').map(alert => (
+                    <div key={alert.id} className={`p-4 rounded-2xl border transition-all ${alert.status === 'active' ? 'bg-error/10 border-error/20' : 'bg-warning/10 border-warning/20'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="font-bold text-sm">{alert.name}</div>
+                        <div className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-dark-bg/50">
+                          {alert.status}
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-text-secondary mb-4 flex items-center gap-2">
+                        <Clock className="w-3 h-3" /> {alert.time}
+                      </div>
+                      <div className="flex gap-2">
+                        {alert.status === 'active' ? (
+                          <button 
+                            onClick={() => dispatchHelp(alert.id)}
+                            className="flex-1 bg-primary text-dark-bg py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest"
+                          >
+                            Dispatch
+                          </button>
+                        ) : (
+                          <div className="flex-1 bg-secondary-bg/30 text-warning py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-center border border-warning/20">
+                            Responder: {alert.responderId}
+                          </div>
+                        )}
+                        <button 
+                          onClick={() => resolveAlert(alert.id)}
+                          className="flex-1 bg-success text-text-primary py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest"
+                        >
+                          Resolve
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'alerts' && (
         <div className="grid md:grid-cols-3 gap-8">
           <div className="md:col-span-1 space-y-6">
             <div className="glass-card p-8 h-[700px] flex flex-col relative overflow-hidden animate-float">
@@ -2603,7 +2973,9 @@ const AdminPage = () => {
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'users' && (
         <div className="space-y-8">
           <div className="glass-card overflow-hidden shadow-2xl relative z-10">
             <div className="absolute inset-0 shimmer opacity-5 pointer-events-none rounded-[32px]" />
@@ -2841,112 +3213,113 @@ const AdminPage = () => {
         )}
       </AnimatePresence>
 
-      {/* SOS History Section */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mt-12 glass-card overflow-hidden shadow-2xl relative z-10 animate-float"
-      >
-        <div className="absolute inset-0 shimmer opacity-5 pointer-events-none rounded-[32px]" />
-        <div className="p-8 border-b border-glass-border flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <h3 className="text-2xl font-black flex items-center gap-4 text-text-primary tracking-tight">
-              <Activity className="text-primary w-7 h-7" /> SOS Alert History
-            </h3>
-            <p className="text-text-secondary text-sm mt-2 font-medium">Comprehensive log of all emergency signals received.</p>
+      {activeTab === 'alerts' && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-12 glass-card overflow-hidden shadow-2xl relative z-10 animate-float"
+        >
+          <div className="absolute inset-0 shimmer opacity-5 pointer-events-none rounded-[32px]" />
+          <div className="p-8 border-b border-glass-border flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <h3 className="text-2xl font-black flex items-center gap-4 text-text-primary tracking-tight">
+                <Activity className="text-primary w-7 h-7" /> SOS Alert History
+              </h3>
+              <p className="text-text-secondary text-sm mt-2 font-medium">Comprehensive log of all emergency signals received.</p>
+            </div>
+            
+            <div className="flex bg-secondary-bg/30 p-1.5 rounded-2xl border border-glass-border/50 shadow-inner">
+              {(['all', 'active', 'resolved']).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setHistoryFilter(f)}
+                  className={`px-8 py-2.5 rounded-xl text-[11px] font-bold transition-all capitalize tracking-widest ${historyFilter === f ? 'bg-primary text-text-primary shadow-lg shadow-primary/30' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           </div>
-          
-          <div className="flex bg-secondary-bg/30 p-1.5 rounded-2xl border border-glass-border/50 shadow-inner">
-            {(['all', 'active', 'resolved']).map((f) => (
-              <button
-                key={f}
-                onClick={() => setHistoryFilter(f)}
-                className={`px-8 py-2.5 rounded-xl text-[11px] font-bold transition-all capitalize tracking-widest ${historyFilter === f ? 'bg-primary text-text-primary shadow-lg shadow-primary/30' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-secondary-bg/20 text-[11px] uppercase tracking-[0.2em] font-bold text-text-secondary">
-                <th className="px-10 py-5">Timestamp</th>
-                <th className="px-10 py-5">User Details</th>
-                <th className="px-10 py-5">Location</th>
-                <th className="px-10 py-5">Status</th>
-                <th className="px-10 py-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-glass-border/50">
-              {alerts
-                .filter(a => historyFilter === 'all' || a.status === historyFilter)
-                .map(alert => (
-                  <tr key={alert.id} className="hover:bg-secondary-bg/10 transition-colors group">
-                    <td className="px-10 py-8">
-                      <div className="text-sm font-bold text-text-primary tracking-tight">{alert.time}</div>
-                      <div className="text-[10px] text-text-secondary mt-1 font-medium tracking-wide">{new Date(alert.timestamp).toLocaleDateString()}</div>
-                    </td>
-                    <td className="px-10 py-8">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold overflow-hidden border border-primary/20">
-                          {alert.photoURL ? (
-                            <img src={alert.photoURL} alt={alert.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            alert.name.charAt(0)
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-text-primary tracking-tight">{alert.name}</div>
-                          <div className="text-[10px] text-text-secondary flex items-center gap-2 mt-1 font-medium">
-                            <PhoneCall className="w-3 h-3" /> {alert.phone}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-secondary-bg/20 text-[11px] uppercase tracking-[0.2em] font-bold text-text-secondary">
+                  <th className="px-10 py-5">Timestamp</th>
+                  <th className="px-10 py-5">User Details</th>
+                  <th className="px-10 py-5">Location</th>
+                  <th className="px-10 py-5">Status</th>
+                  <th className="px-10 py-5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-glass-border/50">
+                {alerts
+                  .filter(a => historyFilter === 'all' || a.status === historyFilter)
+                  .map(alert => (
+                    <tr key={alert.id} className="hover:bg-secondary-bg/10 transition-colors group">
+                      <td className="px-10 py-8">
+                        <div className="text-sm font-bold text-text-primary tracking-tight">{alert.time}</div>
+                        <div className="text-[10px] text-text-secondary mt-1 font-medium tracking-wide">{new Date(alert.timestamp).toLocaleDateString()}</div>
+                      </td>
+                      <td className="px-10 py-8">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold overflow-hidden border border-primary/20">
+                            {alert.photoURL ? (
+                              <img src={alert.photoURL} alt={alert.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              alert.name.charAt(0)
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-text-primary tracking-tight">{alert.name}</div>
+                            <div className="text-[10px] text-text-secondary flex items-center gap-2 mt-1 font-medium">
+                              <PhoneCall className="w-3 h-3" /> {alert.phone}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-10 py-8">
-                      <button 
-                        onClick={() => {
-                          setMapCenter([alert.lat, alert.lng]);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="text-[11px] text-text-secondary hover:text-primary flex items-center gap-2 transition-all font-bold tracking-wide"
-                      >
-                        <MapPin className="w-3.5 h-3.5" /> {alert.lat.toFixed(4)}, {alert.lng.toFixed(4)}
-                      </button>
-                    </td>
-                    <td className="px-10 py-8">
-                      <span className={`px-4 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] border ${alert.status === 'active' ? 'bg-error/10 text-error border-error/20 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : 'bg-success/10 text-success border-success/20'}`}>
-                        {alert.status}
-                      </span>
-                    </td>
-                    <td className="px-10 py-8 text-right">
-                      {alert.status === 'active' ? (
+                      </td>
+                      <td className="px-10 py-8">
                         <button 
-                          onClick={() => resolveAlert(alert.id)}
-                          className="bg-success hover:bg-success/90 text-text-primary text-[11px] font-bold px-6 py-2.5 rounded-xl transition-all shadow-lg shadow-success/20"
+                          onClick={() => {
+                            setMapCenter([alert.lat, alert.lng]);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="text-[11px] text-text-secondary hover:text-primary flex items-center gap-2 transition-all font-bold tracking-wide"
                         >
-                          Resolve
+                          <MapPin className="w-3.5 h-3.5" /> {alert.lat.toFixed(4)}, {alert.lng.toFixed(4)}
                         </button>
-                      ) : (
-                        <div className="text-success flex items-center justify-end gap-2 text-[11px] font-bold tracking-wide">
-                          <CheckCircle className="w-4 h-4" /> Resolved
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          {alerts.filter(a => historyFilter === 'all' || a.status === historyFilter).length === 0 && (
-            <div className="py-20 text-center text-text-secondary text-sm">
-              No {historyFilter !== 'all' ? historyFilter : ''} alerts found in history.
-            </div>
-          )}
-        </div>
-      </motion.div>
+                      </td>
+                      <td className="px-10 py-8">
+                        <span className={`px-4 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] border ${alert.status === 'active' ? 'bg-error/10 text-error border-error/20 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : 'bg-success/10 text-success border-success/20'}`}>
+                          {alert.status}
+                        </span>
+                      </td>
+                      <td className="px-10 py-8 text-right">
+                        {alert.status === 'active' ? (
+                          <button 
+                            onClick={() => resolveAlert(alert.id)}
+                            className="bg-success hover:bg-success/90 text-text-primary text-[11px] font-bold px-6 py-2.5 rounded-xl transition-all shadow-lg shadow-success/20"
+                          >
+                            Resolve
+                          </button>
+                        ) : (
+                          <div className="text-success flex items-center justify-end gap-2 text-[11px] font-bold tracking-wide">
+                            <CheckCircle className="w-4 h-4" /> Resolved
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            {alerts.filter(a => historyFilter === 'all' || a.status === historyFilter).length === 0 && (
+              <div className="py-20 text-center text-text-secondary text-sm">
+                No {historyFilter !== 'all' ? historyFilter : ''} alerts found in history.
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 };
@@ -2957,6 +3330,9 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(null); // 'offline' | 'permission' | null
+
+  // Feature 2: Live Location Tracking
+  useLiveTracking(user?.id);
 
   useEffect(() => {
     // Test Firestore Connection
@@ -2972,10 +3348,10 @@ export default function App() {
         console.error("Firestore connection test failed:", error);
         const msg = error instanceof Error ? error.message.toLowerCase() : '';
         if (msg.includes('offline')) {
-          console.error("CRITICAL: Firestore is offline. Please ensure you have created a Firestore database in your Firebase project (safe-walk-f2a2c) at https://console.firebase.google.com/");
+          console.error("CRITICAL: Firestore is offline. Please ensure you have created a Firestore database in your Firebase project (gen-lang-client-0025721818) at https://console.firebase.google.com/");
           setConnectionError('offline');
         } else if (msg.includes('permission') || msg.includes('insufficient')) {
-          console.error("CRITICAL: Firestore permission denied. Please update your Security Rules in the Firebase Console (safe-walk-f2a2c) at https://console.firebase.google.com/");
+          console.error("CRITICAL: Firestore permission denied. Please update your Security Rules in the Firebase Console (gen-lang-client-0025721818) at https://console.firebase.google.com/");
           setConnectionError('permission');
         }
       }
@@ -3055,11 +3431,11 @@ service cloud.firestore {
             <AlertTriangle className="w-5 h-5" />
             <span>
               {connectionError === 'offline' 
-                ? "Firestore is Offline! Please create a Firestore database in your Firebase Console (safe-walk-f2a2c) to enable all features."
-                : "Firestore Permission Denied! Please update your Security Rules in the Firebase Console (safe-walk-f2a2c) to allow access."}
+                ? "Firestore is Offline! Please create a Firestore database in your Firebase Console (gen-lang-client-0025721818) to enable all features."
+                : "Firestore Permission Denied! Please update your Security Rules in the Firebase Console (gen-lang-client-0025721818) to allow access."}
             </span>
             <a 
-              href={`https://console.firebase.google.com/project/safe-walk-f2a2c/firestore/${connectionError === 'offline' ? 'databases' : 'rules'}`} 
+              href={`https://console.firebase.google.com/project/gen-lang-client-0025721818/firestore/${connectionError === 'offline' ? 'databases' : 'rules'}`} 
               target="_blank" 
               rel="noopener noreferrer"
               className="underline hover:text-white/80 transition-colors ml-2"
@@ -3093,7 +3469,7 @@ service cloud.firestore {
           <Route path="/profile" element={<ProfilePage user={user} onUpdate={setUser} />} />
           <Route path="/settings" element={<SettingsPage user={user} onUpdate={setUser} />} />
           <Route path="/track/:userId" element={<TrackingPage user={user} />} />
-          <Route path="/admin" element={user?.role === 'admin' || user?.email === 'valism619@gmail.com' ? <AdminPage /> : <Navigate to="/dashboard" />} />
+          <Route path="/admin" element={user?.role === 'admin' || user?.email === 'valism619@gmail.com' || user?.email === 'shaikking032@gmail.com' ? <AdminPage /> : <Navigate to="/dashboard" />} />
         </Routes>
 
         {/* Footer */}

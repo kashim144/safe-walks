@@ -5,6 +5,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { extensionEvents, setupFirebaseMirror, setupLiveTracking } from "./extensions/backendExtensions.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -14,6 +15,10 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Initialize Extensions
+setupFirebaseMirror(io);
+setupLiveTracking(io);
 
 app.use(cors());
 app.use(express.json());
@@ -35,6 +40,7 @@ app.post("/api/register", (req, res) => {
   const newUser = { id: "u" + Date.now(), name, email, phone, emergency };
   users.push(newUser);
   writeData(USERS_FILE, users);
+  extensionEvents.emit("data_updated", { type: "user", data: newUser });
   res.json({ success: true, user: newUser });
 });
 
@@ -58,6 +64,7 @@ app.post("/api/user/update", (req, res) => {
   if (userIndex > -1) {
     users[userIndex] = { ...users[userIndex], name, phone, emergency, photoURL };
     writeData(USERS_FILE, users);
+    extensionEvents.emit("data_updated", { type: "user", data: users[userIndex] });
     res.json({ success: true, user: users[userIndex] });
   } else {
     res.status(404).json({ success: false, message: "User not found" });
@@ -101,6 +108,10 @@ app.post("/api/sos", (req, res) => {
   // Real-time emit
   io.emit("new_alert", newAlert);
   
+  // Extension triggers
+  extensionEvents.emit("sos_triggered", newAlert);
+  extensionEvents.emit("data_updated", { type: "alert", data: newAlert });
+  
   res.json({ success: true, alert: newAlert });
 });
 
@@ -142,6 +153,7 @@ app.post("/api/routes", (req, res) => {
   };
   routes.unshift(newRoute);
   writeData(ROUTES_FILE, routes);
+  extensionEvents.emit("data_updated", { type: "route", data: newRoute });
   res.json({ success: true, route: newRoute });
 });
 

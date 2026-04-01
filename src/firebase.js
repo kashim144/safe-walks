@@ -11,11 +11,11 @@ import firebaseConfig from '../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with settings to bypass potential network/proxy issues
-// Explicitly using (default) database to ensure it connects to the right instance
+// Using the database ID from config to ensure it connects to the right instance
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   useFetchStreams: false,
-}, "(default)");
+}, firebaseConfig.firestoreDatabaseId || "(default)");
 
 export const auth = getAuth(app);
 export const storage = getStorage(app);
