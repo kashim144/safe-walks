@@ -41,6 +41,16 @@
   --spacing-16: 64px;
 }
 
+.mode-icon-glow {
+  filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5));
+  transition: all 0.3s ease;
+}
+
+.mode-icon-glow:hover {
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.8));
+}
+
 @layer base {
   body {
     @apply bg-dark-bg text-text-primary font-sans antialiased overflow-x-hidden leading-relaxed;

@@ -43,6 +43,15 @@ service cloud.firestore {
     //   - timestamp: number (required) - The timestamp of the route.
     //   - time: string (optional) - The time the route was saved.
     //
+    // Collection: reviews
+    // Document ID: {reviewId}
+    // Fields:
+    //   - userId: string (required) - The ID of the user.
+    //   - routeId: string (required) - The ID of the route.
+    //   - rating: number (required, 1-5) - The rating given to the route.
+    //   - comment: string (optional) - The review comment or complaint.
+    //   - timestamp: number (required) - The timestamp of the review.
+    //
     // ===============================================================
 
     // ===============================================================
@@ -120,6 +129,20 @@ service cloud.firestore {
              (!('time' in data) || (data.time is string && data.time.size() < 50));
     }
 
+    function isValidReview(data) {
+      let requiredFields = ['userId', 'routeId', 'rating', 'timestamp'];
+      let optionalFields = ['comment', 'id'];
+      let allFields = requiredFields.concat(optionalFields);
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allFields) &&
+             data.userId is string &&
+             data.routeId is string &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             (data.timestamp is timestamp || data.timestamp is number) &&
+             (!('comment' in data) || (data.comment is string && data.comment.size() < 1000)) &&
+             (!('id' in data) || (data.id is string));
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user') || isAdmin();
@@ -137,6 +160,12 @@ service cloud.firestore {
       allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || resource.data.userId == 'demo-user';
       allow create: if (isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidRoute(request.resource.data)) || (request.resource.data.userId == 'demo-user' && isValidRoute(request.resource.data));
       allow delete: if (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || resource.data.userId == 'demo-user';
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true; // Publicly readable for transparency
+      allow create: if (isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidReview(request.resource.data)) || (request.resource.data.userId == 'demo-user' && isValidReview(request.resource.data));
+      allow update, delete: if (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || resource.data.userId == 'demo-user';
     }
 
     match /test/{docId} {

@@ -50,6 +50,19 @@
         "time": { "type": "string", "description": "The time the route was saved." }
       },
       "required": ["userId", "startAddr", "endAddr", "timestamp", "route"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A review or complaint about a specific route.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user who wrote the review." },
+        "routeId": { "type": "string", "description": "The ID of the route being reviewed." },
+        "rating": { "type": "number", "description": "The rating given to the route (1-5)." },
+        "comment": { "type": "string", "description": "The review comment or complaint." },
+        "timestamp": { "type": "number", "description": "The timestamp of the review." }
+      },
+      "required": ["userId", "routeId", "rating", "timestamp"]
     }
   },
   "firestore": {
@@ -64,6 +77,10 @@
     "/routes/{routeId}": {
       "schema": "Route",
       "description": "Saved route history."
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Route reviews and complaints."
     }
   }
 }

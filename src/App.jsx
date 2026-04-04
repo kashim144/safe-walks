@@ -40,7 +40,12 @@ import {
   Camera,
   Upload,
   Copy,
-  Clock
+  Clock,
+  Layers as LayersIcon,
+  Car,
+  Bike,
+  Bus,
+  Accessibility as Walking
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl, FeatureGroup } from 'react-leaflet';
@@ -87,7 +92,10 @@ import {
   AISafetyAssistant, 
   AnalyticsDashboard, 
   useLiveTracking,
-  useLiveLocationReceiver 
+  useLiveLocationReceiver,
+  BatterySOS,
+  SMSBackup,
+  RouteReviewModal
 } from './extensions/FrontendExtensions';
 
 // Fix Leaflet icon issue
@@ -110,26 +118,86 @@ const CustomMarkerIcon = L.icon({
     popupAnchor: [0, -32]
 });
 
-const MapTypeControl = ({ mapType, setMapType }) => {
-  const types = [
+const UnifiedMapControl = ({ mapType, setMapType, travelMode, setTravelMode }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  const mapTypes = [
     { id: 'roadmap', label: 'Roadmap', icon: <Globe className="w-4 h-4" /> },
     { id: 'satellite', label: 'Satellite', icon: <Camera className="w-4 h-4" /> },
     { id: 'terrain', label: 'Terrain', icon: <Activity className="w-4 h-4" /> },
-    { id: 'hybrid', label: 'Hybrid', icon: <LayersControl className="w-4 h-4" /> }
+    { id: 'hybrid', label: 'Hybrid', icon: <LayersIcon className="w-4 h-4" /> }
   ];
 
+  const travelModes = [
+    { id: 'car', label: 'Car', icon: <Car className="w-4 h-4" /> },
+    { id: 'bike', label: 'Bike', icon: <Bike className="w-4 h-4" /> },
+    { id: 'bus', label: 'Bus', icon: <Bus className="w-4 h-4" /> },
+    { id: 'walk', label: 'Walk', icon: <Walking className="w-4 h-4" /> }
+  ];
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
-    <div className="absolute top-6 right-20 z-[1000] flex gap-2 bg-card-bg/80 backdrop-blur-md p-1.5 rounded-2xl border border-glass-border shadow-2xl">
-      {types.map(t => (
-        <button
-          key={t.id}
-          onClick={() => setMapType(t.id)}
-          className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${mapType === t.id ? 'bg-primary text-dark-bg shadow-lg' : 'text-text-secondary hover:text-text-primary hover:bg-secondary-bg/50'}`}
-        >
-          {t.icon}
-          <span className="hidden sm:inline">{t.label}</span>
-        </button>
-      ))}
+    <div className="absolute top-6 right-20 z-[1000]" ref={menuRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`p-3 rounded-2xl bg-card-bg/80 backdrop-blur-md border border-glass-border shadow-2xl transition-all ${isOpen ? 'bg-primary text-dark-bg border-primary' : 'text-text-primary hover:bg-secondary-bg/50'}`}
+        title="Map Settings"
+      >
+        <LayersIcon className="w-6 h-6" />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="absolute top-full right-0 mt-3 w-56 bg-card-bg/95 backdrop-blur-xl border border-glass-border rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-4"
+          >
+            <div>
+              <div className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-text-secondary">Map Type</div>
+              <div className="flex flex-col gap-1 mt-1">
+                {mapTypes.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setMapType(t.id)}
+                    className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-3 transition-all ${mapType === t.id ? 'bg-primary text-dark-bg' : 'text-text-secondary hover:text-text-primary hover:bg-secondary-bg/50'}`}
+                  >
+                    {t.icon}
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-glass-border/50 pt-2">
+              <div className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-text-secondary">Travel Mode</div>
+              <div className="flex flex-col gap-1 mt-1">
+                {travelModes.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setTravelMode(m.id)}
+                    className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-3 transition-all ${travelMode === m.id ? 'bg-primary text-dark-bg' : 'text-text-secondary hover:text-text-primary hover:bg-secondary-bg/50'}`}
+                  >
+                    {m.icon}
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -1139,6 +1207,22 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
+const createModeIcon = (mode) => {
+  const icons = {
+    car: 'https://cdn-icons-png.flaticon.com/512/741/741407.png',
+    bike: 'https://cdn-icons-png.flaticon.com/512/2972/2972185.png',
+    bus: 'https://cdn-icons-png.flaticon.com/512/3066/3066256.png',
+    walk: 'https://cdn-icons-png.flaticon.com/512/3663/3663335.png'
+  };
+  return L.icon({
+    iconUrl: icons[mode] || icons.car,
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -40],
+    className: 'mode-icon-glow'
+  });
+};
+
 const DashboardPage = ({ user }) => {
   const navigate = useNavigate();
   const [location, setLocation] = useState(null);
@@ -1162,8 +1246,11 @@ const DashboardPage = ({ user }) => {
   const [activeAlert, setActiveAlert] = useState(null);
   const [allAlerts, setAllAlerts] = useState([]);
   const [mapType, setMapType] = useState('roadmap');
+  const [travelMode, setTravelMode] = useState('car');
   const [customMarkers, setCustomMarkers] = useState([]);
   const [drawnItems, setDrawnItems] = useState([]);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [lastCompletedRoute, setLastCompletedRoute] = useState(null);
 
   const getTileUrl = () => {
     switch (mapType) {
@@ -1362,7 +1449,11 @@ const DashboardPage = ({ user }) => {
 
   const calculateRoute = async (s, e) => {
     try {
-      const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${s[1]},${s[0]};${e[1]},${e[0]}?overview=full&geometries=geojson&alternatives=true`);
+      let profile = 'driving';
+      if (travelMode === 'walk') profile = 'walking';
+      if (travelMode === 'bike') profile = 'cycling';
+      
+      const res = await fetch(`https://router.project-osrm.org/route/v1/${profile}/${s[1]},${s[0]};${e[1]},${e[0]}?overview=full&geometries=geojson&alternatives=true`);
       if (!res.ok) throw new Error('Route calculation failed');
       const data = await res.json();
       if (data.routes && data.routes.length > 0) {
@@ -1399,6 +1490,41 @@ const DashboardPage = ({ user }) => {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleExitNavigation = () => {
+    if (route.length > 0) {
+      setLastCompletedRoute({
+        startAddr,
+        endAddr,
+        timestamp: Date.now()
+      });
+      setShowReviewModal(true);
+    }
+    setRoute([]);
+    setStart(null);
+    setEnd(null);
+    setStartAddr('');
+    setEndAddr('');
+    setRouteInfo(null);
+  };
+
+  const handleReviewSubmit = async (review) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'reviews'), {
+        userId: String(user.id),
+        routeId: lastCompletedRoute?.id || 'manual-exit',
+        rating: review.rating,
+        comment: review.comment,
+        timestamp: serverTimestamp(),
+        startAddr: lastCompletedRoute?.startAddr,
+        endAddr: lastCompletedRoute?.endAddr
+      });
+      setSuccess('Thank you for your feedback!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'reviews');
     }
   };
 
@@ -1884,7 +2010,12 @@ const DashboardPage = ({ user }) => {
               >
                 <ChangeView center={mapCenter} />
                 <MapControls onRecenter={() => location && setMapCenter(location)} />
-                <MapTypeControl mapType={mapType} setMapType={setMapType} />
+                <UnifiedMapControl 
+                  mapType={mapType} 
+                  setMapType={setMapType} 
+                  travelMode={travelMode}
+                  setTravelMode={setTravelMode}
+                />
                 <SearchControl onSelect={handlePlaceSelect} />
                 
                 <TileLayer 
@@ -1933,7 +2064,20 @@ const DashboardPage = ({ user }) => {
                 ))}
 
                 {start && <Marker position={start}><Popup>Start</Popup></Marker>}
-                {end && <Marker position={end}><Popup>Destination</Popup></Marker>}
+                {end && (
+                  <Marker position={end} icon={createModeIcon(travelMode)}>
+                    <Popup>
+                      <div className="p-2 text-center">
+                        <div className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Destination</div>
+                        {routeInfo && (
+                          <div className="text-[10px] font-black text-text-primary">
+                            {routeInfo.distance} km away
+                          </div>
+                        )}
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
                 {route.length > 0 && <Polyline positions={route} color="#EF4444" weight={6} opacity={0.8} />}
               </MapContainer>
             ) : (
@@ -1959,8 +2103,47 @@ const DashboardPage = ({ user }) => {
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-warning">Voice Recognition On</span>
                 </div>
               )}
+              {route.length > 0 && (
+                <button 
+                  onClick={handleExitNavigation}
+                  className="glass-card px-5 py-3 flex items-center gap-3 border-error/30 bg-error/[0.05] hover:bg-error/10 transition-all group"
+                >
+                  <X className="w-4 h-4 text-error group-hover:rotate-90 transition-transform" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-error">Exit Navigation</span>
+                </button>
+              )}
+              {routeInfo && (
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="glass-card px-6 py-4 border-primary/30 bg-primary/5 flex items-center gap-4"
+                >
+                  <div className="p-2 bg-primary/20 rounded-lg">
+                    {travelMode === 'car' && <Car className="w-5 h-5 text-primary" />}
+                    {travelMode === 'bike' && <Bike className="w-5 h-5 text-primary" />}
+                    {travelMode === 'bus' && <Bus className="w-5 h-5 text-primary" />}
+                    {travelMode === 'walk' && <Walking className="w-5 h-5 text-primary" />}
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Distance to Destination</div>
+                    <div className="text-xl font-black text-primary">{routeInfo.distance} <span className="text-xs">km</span></div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+
+            <div className="absolute bottom-6 left-6 z-[1000] flex flex-col gap-3">
+              <BatterySOS onTrigger={triggerSOS} />
+              <SMSBackup emergencyContact={user?.emergency} location={location} />
             </div>
           </div>
+
+          <RouteReviewModal 
+            isOpen={showReviewModal}
+            onClose={() => setShowReviewModal(false)}
+            onSubmit={handleReviewSubmit}
+            routeData={lastCompletedRoute}
+          />
 
           <div className="glass-card p-8 relative overflow-hidden animate-float">
             <div className="absolute inset-0 shimmer opacity-5 pointer-events-none rounded-[24px]" />

@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Mic, Shield, AlertTriangle, Activity, 
   TrendingUp, Map as MapIcon, Brain, 
-  Navigation, Info, X, CheckCircle
+  Navigation, Info, X, CheckCircle,
+  Battery, MessageSquare, Star
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { io } from 'socket.io-client';
@@ -288,4 +289,122 @@ export const useLiveLocationReceiver = (userId) => {
   }, [userId]);
 
   return location;
+};
+
+// --- Feature 9: Low Battery Auto SOS ---
+export const BatterySOS = ({ onTrigger }) => {
+  const [batteryLevel, setBatteryLevel] = useState(null);
+  const [isLow, setIsLow] = useState(false);
+
+  useEffect(() => {
+    if (!('getBattery' in navigator)) return;
+
+    navigator.getBattery().then(battery => {
+      const updateBattery = () => {
+        const level = battery.level * 100;
+        setBatteryLevel(level);
+        if (level <= 10 && !isLow) {
+          setIsLow(true);
+          onTrigger();
+        }
+      };
+
+      updateBattery();
+      battery.addEventListener('levelchange', updateBattery);
+      return () => battery.removeEventListener('levelchange', updateBattery);
+    });
+  }, [onTrigger, isLow]);
+
+  if (batteryLevel === null) return null;
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary-bg/30 border border-glass-border">
+      <Battery className={`w-3.5 h-3.5 ${batteryLevel <= 20 ? 'text-error animate-pulse' : 'text-success'}`} />
+      <span className="text-[10px] font-bold">{Math.round(batteryLevel)}%</span>
+    </div>
+  );
+};
+
+// --- Feature 10: Offline SMS Backup ---
+export const SMSBackup = ({ emergencyContact, location }) => {
+  const sendSMS = () => {
+    if (!emergencyContact) {
+      alert("Please set an emergency contact in settings first.");
+      return;
+    }
+    const message = `EMERGENCY SOS! I need help. My current location: https://www.google.com/maps?q=${location?.[0]},${location?.[1]}`;
+    window.location.href = `sms:${emergencyContact}?body=${encodeURIComponent(message)}`;
+  };
+
+  return (
+    <button 
+      onClick={sendSMS}
+      className="flex items-center gap-2 px-4 py-2 bg-secondary-bg/50 hover:bg-primary/20 text-text-primary rounded-xl border border-glass-border transition-all group"
+    >
+      <MessageSquare className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
+      <span className="text-xs font-bold uppercase tracking-widest">SMS Backup</span>
+    </button>
+  );
+};
+
+// --- Feature 11: Route Review / Complaint System ---
+export const RouteReviewModal = ({ isOpen, onClose, onSubmit, routeData }) => {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[6000] flex items-center justify-center bg-dark-bg/90 backdrop-blur-xl p-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-card p-8 max-w-md w-full border-primary/20"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold flex items-center gap-3">
+            <Star className="text-primary w-5 h-5" />
+            Route Feedback
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-secondary-bg rounded-lg transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <p className="text-xs text-text-secondary mb-6 leading-relaxed">
+          How was your journey from <span className="text-text-primary font-bold">{routeData?.startAddr}</span> to <span className="text-text-primary font-bold">{routeData?.endAddr}</span>?
+        </p>
+
+        <div className="flex justify-center gap-3 mb-8">
+          {[1, 2, 3, 4, 5].map((star) => (
+            <button 
+              key={star}
+              onClick={() => setRating(star)}
+              className={`p-2 transition-all ${rating >= star ? 'text-primary scale-110' : 'text-text-secondary opacity-30 hover:opacity-100'}`}
+            >
+              <Star className="w-8 h-8 fill-current" />
+            </button>
+          ))}
+        </div>
+
+        <textarea 
+          placeholder="Any safety concerns or complaints about this route?"
+          className="w-full bg-secondary-bg/30 border border-glass-border rounded-xl p-4 text-sm text-text-primary focus:border-primary/50 outline-none transition-all h-32 mb-6 resize-none"
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+        />
+
+        <button 
+          onClick={() => {
+            onSubmit({ rating, comment });
+            onClose();
+          }}
+          disabled={rating === 0}
+          className="w-full py-4 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Submit Review
+        </button>
+      </motion.div>
+    </div>
+  );
 };
