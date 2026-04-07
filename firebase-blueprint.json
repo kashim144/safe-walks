@@ -63,6 +63,22 @@
         "timestamp": { "type": "number", "description": "The timestamp of the review." }
       },
       "required": ["userId", "routeId", "rating", "timestamp"]
+    },
+    "Zone": {
+      "title": "Zone",
+      "description": "A safety or risk zone defined on the map.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique ID of the zone." },
+        "name": { "type": "string", "description": "The name of the zone." },
+        "type": { "type": "string", "enum": ["safe", "risk"], "description": "The type of zone." },
+        "center": { "type": "array", "items": { "type": "number" }, "description": "The [lat, lng] center of the zone." },
+        "radius": { "type": "number", "description": "The radius of the zone in meters." },
+        "description": { "type": "string", "description": "A description of the zone." },
+        "createdAt": { "type": "number", "description": "The timestamp when the zone was created." },
+        "createdBy": { "type": "string", "description": "The ID of the user who created the zone." }
+      },
+      "required": ["name", "type", "center", "radius", "createdAt"]
     }
   },
   "firestore": {
@@ -81,6 +97,10 @@
     "/reviews/{reviewId}": {
       "schema": "Review",
       "description": "Route reviews and complaints."
+    },
+    "/zones/{zoneId}": {
+      "schema": "Zone",
+      "description": "Safety and risk zones."
     }
   }
 }

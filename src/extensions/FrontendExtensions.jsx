@@ -30,6 +30,17 @@ export const VoiceSOS = ({ onTrigger }) => {
           onTrigger();
         }
       };
+
+      recognitionRef.current.onerror = (event) => {
+        if (event.error === 'no-speech') {
+          setIsListening(false);
+          return;
+        }
+        console.error("[Voice] Error:", event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => setIsListening(false);
     }
   }, [onTrigger]);
 
@@ -187,6 +198,19 @@ export const AISafetyAssistant = ({ routes, alerts }) => {
               </div>
             ))}
           </div>
+          {analysis.riskZones && analysis.riskZones.length > 0 && (
+            <div className="mt-4">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-error mb-2">High Risk Zones Identified</div>
+              <div className="space-y-2">
+                {analysis.riskZones.map((zone, i) => (
+                  <div key={i} className="p-3 rounded-xl bg-error/5 border border-error/20 flex items-center gap-3">
+                    <AlertTriangle className="w-4 h-4 text-error" />
+                    <span className="text-[10px] font-bold text-text-primary">{zone}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-center py-4">
@@ -278,7 +302,7 @@ export const useLiveLocationReceiver = (userId) => {
     const socket = io();
 
     socket.on('location_update', (data) => {
-      if (data.userId === userId) {
+      if (data.userId === userId && typeof data.lat === 'number' && typeof data.lng === 'number') {
         setLocation([data.lat, data.lng]);
       }
     });
@@ -315,7 +339,7 @@ export const BatterySOS = ({ onTrigger }) => {
     });
   }, [onTrigger, isLow]);
 
-  if (batteryLevel === null) return null;
+  if (batteryLevel === null || isNaN(batteryLevel)) return null;
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary-bg/30 border border-glass-border">

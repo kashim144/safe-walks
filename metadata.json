@@ -1,5 +1,5 @@
 {
   "name": "SafeWalk - Smart Safety Navigation",
   "description": "A professional SaaS platform for real-time safe route navigation and SOS emergency protection.",
-  "requestFramePermissions": ["geolocation"]
+  "requestFramePermissions": ["geolocation", "microphone"]
 }
