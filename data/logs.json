@@ -1,1 +1,176 @@
-[]
+[
+  {
+    "timestamp": "2026-04-07T17:57:00.623Z",
+    "method": "GET",
+    "url": "/",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.696Z",
+    "method": "GET",
+    "url": "/src/main.jsx?t=1775584620060",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.699Z",
+    "method": "GET",
+    "url": "/@vite/client",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.701Z",
+    "method": "GET",
+    "url": "/@react-refresh",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.704Z",
+    "method": "GET",
+    "url": "/src/App.jsx?t=1775584595548",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.710Z",
+    "method": "GET",
+    "url": "/src/components/ErrorBoundary.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.727Z",
+    "method": "GET",
+    "url": "/src/index.css?t=1775584620060",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.735Z",
+    "method": "GET",
+    "url": "/node_modules/vite/dist/client/env.mjs",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.740Z",
+    "method": "GET",
+    "url": "/src/firebase.js",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.746Z",
+    "method": "GET",
+    "url": "/src/lib/utils.js",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.772Z",
+    "method": "GET",
+    "url": "/src/components/Navbar.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.783Z",
+    "method": "GET",
+    "url": "/src/components/Footer.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.790Z",
+    "method": "GET",
+    "url": "/src/pages/HomePage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.809Z",
+    "method": "GET",
+    "url": "/src/pages/LoginPage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.823Z",
+    "method": "GET",
+    "url": "/src/pages/RegisterPage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.845Z",
+    "method": "GET",
+    "url": "/src/pages/DashboardPage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.848Z",
+    "method": "GET",
+    "url": "/src/pages/ProfilePage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.854Z",
+    "method": "GET",
+    "url": "/src/pages/SettingsPage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.861Z",
+    "method": "GET",
+    "url": "/src/pages/TrackingPage.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.864Z",
+    "method": "GET",
+    "url": "/src/pages/AdminPage.jsx?t=1775584595548",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.866Z",
+    "method": "GET",
+    "url": "/firebase-applet-config.json?import",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.871Z",
+    "method": "GET",
+    "url": "/src/components/HelplineSection.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.875Z",
+    "method": "GET",
+    "url": "/src/lib/mapUtils.js",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.877Z",
+    "method": "GET",
+    "url": "/src/extensions/FrontendExtensions.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.880Z",
+    "method": "GET",
+    "url": "/src/components/MapControls.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.882Z",
+    "method": "GET",
+    "url": "/src/hooks/useIntelligentSOS.js",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.886Z",
+    "method": "GET",
+    "url": "/src/components/VoiceAssistant.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:00.888Z",
+    "method": "GET",
+    "url": "/src/components/HeatmapLayer.jsx",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-04-07T17:57:02.732Z",
+    "method": "GET",
+    "url": "/sw.js",
+    "ip": "127.0.0.1"
+  }
+]

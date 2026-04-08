@@ -49,18 +49,20 @@ app.use(express.json());
 // --- Logging Middleware ---
 const LOGS_FILE = path.join(process.cwd(), "data", "logs.json");
 app.use((req, res, next) => {
-  const log = {
-    timestamp: new Date().toISOString(),
-    method: req.method,
-    url: req.url,
-    ip: req.ip
-  };
-  try {
-    const logs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf8"));
-    logs.push(log);
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs.slice(-1000), null, 2)); // Keep last 1000 logs
-  } catch (e) {
-    console.error("Logging error:", e);
+  if (process.env.NODE_ENV === 'production') {
+    const log = {
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      url: req.url,
+      ip: req.ip
+    };
+    try {
+      const logs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf8"));
+      logs.push(log);
+      fs.writeFileSync(LOGS_FILE, JSON.stringify(logs.slice(-500), null, 2)); // Keep last 500 logs
+    } catch (e) {
+      console.error("Logging error:", e);
+    }
   }
   next();
 });
@@ -307,7 +309,11 @@ app.get("/api/admin/logs", authenticateToken, (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      configFile: path.resolve(process.cwd(), 'vite.config.js'),
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

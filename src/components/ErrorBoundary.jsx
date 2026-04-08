@@ -20,8 +20,9 @@ class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
+    // Removed reload to prevent infinite loop - just reset state
+    console.log('ErrorBoundary: Resetting error state without reload');
     this.setState({ hasError: false, error: null, errorInfo: null });
-    window.location.reload();
   };
 
   render() {

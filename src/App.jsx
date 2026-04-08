@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BrowserRouter as Router, 
   Routes, 
@@ -30,12 +30,17 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(null);
 
+  // Memoize user object to prevent unnecessary re-renders
+  const memoizedUser = useMemo(() => user, [user?.id, user?.email, user?.name, user?.role]);
+
   useEffect(() => {
-    // Test Firestore connection
+    // Test Firestore connection (swallowed errors to prevent boundary trigger)
     const testConnection = async () => {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error) {
+        console.warn('Firestore connection test failed (expected):', error.message);
+        // Don't let it propagate to ErrorBoundary
         if (error instanceof Error) {
           if (error.message.includes('offline')) {
             setConnectionError('offline');
@@ -156,16 +161,18 @@ service cloud.firestore {
               Copy Rules
             </button>
             <button 
-              onClick={() => window.location.reload()}
-              className="ml-4 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+              onClick={() => window.location.reload()} 
+              className="ml-4 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full transition-colors text-xs"
+              title="Only use if stuck - clears local state"
             >
-              Retry
+              Hard Refresh (use sparingly)
             </button>
           </div>
         )}
         
         <div className="particle-bg" />
         <Navbar user={user} onLogout={handleLogout} />
+
         
         <main className="min-h-[calc(100-80px)]">
           <Routes>

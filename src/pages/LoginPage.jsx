@@ -16,7 +16,7 @@ import {
   GoogleAuthProvider, 
   signInWithEmailAndPassword 
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/utils';
 
@@ -65,7 +65,8 @@ const LoginPage = ({ onLogin }) => {
       navigate('/dashboard');
     } catch (err) {
       console.error("Google login error:", err);
-      setError("Failed to login with Google. Please try again.");
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Google login failed: ${message}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -117,7 +118,8 @@ const LoginPage = ({ onLogin }) => {
       }
     } catch (err) {
       console.error("Email login error:", err);
-      setError("Invalid email or password.");
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Email login failed: ${message}`);
     } finally {
       setIsLoggingIn(false);
     }

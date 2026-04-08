@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Bell, 
   AlertTriangle, 
@@ -218,22 +218,28 @@ const AdminPage = () => {
     );
   }, []);
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        const res = await fetch('/api/admin/logs', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setLogs(data);
-        }
-      } catch (e) {
-        console.error(e);
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/logs', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.slice(-50)); // Limit to recent logs
       }
-    };
-    if (activeTab === 'analytics') fetchLogs();
-    
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'analytics') {
+      const timer = setTimeout(fetchLogs, 1000); // Debounce
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, fetchLogs]);
+
+  useEffect(() => {
     // Fetch Heatmap for monitoring/zones
     if (activeTab === 'monitoring' || activeTab === 'zones') {
       fetch('/api/heatmap')
@@ -1229,6 +1235,8 @@ const AdminPage = () => {
           </div>
         </div>
       )}
+
+      {activeTab === 'users' && (
         <div className="space-y-8">
           <div className="glass-card overflow-hidden shadow-2xl relative z-10">
             <div className="absolute inset-0 shimmer opacity-5 pointer-events-none rounded-[32px]" />
